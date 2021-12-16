@@ -2,7 +2,7 @@ mod github_api;
 
 use std::fs;
 
-use github_api::GithubApi;
+use github_api::{GithubApi, Query};
 use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -42,5 +42,11 @@ fn main() {
 
     let api = GithubApi::new(&opt.username, &token);
 
-    api.requires_token();
+    // api.requires_token();
+    api.get_repos(&Query {
+        keyword: "tetris",
+        language: &opt.language,
+        sort: "stars",
+        order: "desc",
+    }).unwrap();
 }
