@@ -1,5 +1,7 @@
-use structopt::StructOpt;
+mod github_api;
 
+use structopt::StructOpt;
+use  github_api::get_repos;
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "bus_factor",
@@ -17,6 +19,6 @@ struct Opt {
 }
 
 fn main() {
-    let opt = Opt::from_args();
-    println!("{:?}", opt);
+    // let opt = Opt::from_args();
+    get_repos();
 }
