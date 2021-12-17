@@ -5,15 +5,18 @@ use std::fs;
 use std::io::Read;
 
 //TODO: use enum where applicable
-pub struct Query<'a>{
-    pub keyword: &'a str,
+pub struct Query<'a> {
     pub language: &'a str,
-    pub sort: &'a str,
-    pub order: &'a str
+    pub count: u32,
 }
 pub struct GithubApi {
     username: String,
     token: String,
+}
+
+struct BusFactor {
+    bus_factor: f64,
+    user_name: String,
 }
 
 impl GithubApi {
@@ -35,7 +38,7 @@ impl GithubApi {
             // .get("https://api.github.com/search/repositories?q=tetris+language:assembly&sort=stars&order=desc&per_page=5")
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
-            .basic_auth("szymek156", Some(&self.token))
+            .basic_auth(&self.username, Some(&self.token))
             .send()?;
 
         let mut body = String::new();
@@ -48,35 +51,109 @@ impl GithubApi {
         Ok(())
     }
 
-    // TODO: use anyhow, or something for err handling
-    pub fn get_repos(&self, query: &Query) -> Result<(), reqwest::Error> {
+    /// For given count elements returns number of pages, and residual
+    fn get_pages(count: u32) -> (u32, u32) {
+        const PAGE_LIMIT: u32 = 100;
+        if count > PAGE_LIMIT {
+            // TODO: implement it
+            todo!();
+        }
 
+        (0, count)
 
+        // let pages = count / PAGE_LIMIT;
+        // let last_page = count % PAGE_LIMIT;
+
+        // (pages, last_page)
+    }
+
+    /// Gets share of contribution for most active user among 25 others
+    pub fn calculate_bus_factor(
+        &self,
+        contributors_url: &str,
+    ) -> Result<BusFactor, reqwest::Error> {
         let client = reqwest::blocking::Client::new();
 
-        // q=tetris+language:assembly&sort=stars&order=desc
-
-        let endpoint =
-            format!("https://api.github.com/search/repositories?q={keyword}+language:{language}&sort={sort}&order={order}&per_page=1",
-             keyword=query.keyword, language=query.language, sort=query.sort,order=query.order);
+        let endpoint = format!(
+            "{contributors_url}?per_page={per_page}",
+            contributors_url = contributors_url,
+            per_page = 25
+        );
 
         let mut res = client
-            // .get("https://api.github.com/search/repositories?q=tetris+language:assembly&sort=stars&order=desc&per_page=5")
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
-            .basic_auth("szymek156", Some(&self.token))
+            .basic_auth(&self.username, Some(&self.token))
             .send()?;
 
         let mut body = String::new();
 
         res.read_to_string(&mut body);
 
-        println!("Status: {}", res.status());
+        // println!("Status: {}", res.status());
 
         // TODO: reqwest error, and serde error, how to propagate both?
         let body: Value = serde_json::from_str(&body).unwrap();
 
-        println!("Body:\n{}", body["items"][0]["name"]);
+        let total_contributions = body.as_array().unwrap().iter().fold(0, |acc, contributor| {
+            acc + contributor["contributions"].as_u64().unwrap()
+        });
+
+        let leader = &body[0];
+        let biggest_contribution = leader["contributions"].as_u64().unwrap();
+        let user_name = leader["login"].as_str().unwrap();
+
+        let mut bus_factor = biggest_contribution as f64 / total_contributions as f64;
+
+        // println!("bus factor for {name} is {bus_factor}", name=user_name, bus_factor=bus_factor);
+        Ok(BusFactor {
+            user_name: user_name.to_string(),
+            bus_factor,
+        })
+    }
+
+    /// Returns most popular projects (by stars) for given language in ascending order
+    pub fn get_projects(&self, query: &Query) -> Result<(), reqwest::Error> {
+        let client = reqwest::blocking::Client::new();
+
+        let (_pages, count) = GithubApi::get_pages(query.count);
+
+        let endpoint =
+        format!("https://api.github.com/search/repositories?q=language:{language}&sort=stars&order=desc&per_page={per_page}",
+          language=query.language, per_page=count);
+
+        let mut res = client
+            .get(endpoint)
+            .header(USER_AGENT, "bus_factor")
+            .basic_auth(&self.username, Some(&self.token))
+            .send()?;
+
+        let mut body = String::new();
+
+        res.read_to_string(&mut body);
+
+        // println!("Status: {}", res.status());
+
+        // TODO: reqwest error, and serde error, how to propagate both?
+        let body: Value = serde_json::from_str(&body).unwrap();
+
+        // TODO: unwrap here
+        // as_array() returns Option<Vec<Value>>, unwrap dereferences to Vec<Value>
+        for item in body["items"].as_array().unwrap() {
+            let contributors_url = item["contributors_url"].as_str().unwrap();
+
+            let bus_factor = self.calculate_bus_factor(contributors_url).unwrap();
+
+            if bus_factor.bus_factor >= 0.75 {
+                println!(
+                    "Project {}, stars {} has bus factor {} for user {}",
+                    item["name"],
+                    item["stargazers_count"],
+                    bus_factor.bus_factor,
+                    bus_factor.user_name
+                );
+            }
+        }
 
         Ok(())
     }
