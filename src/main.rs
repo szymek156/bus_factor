@@ -29,11 +29,19 @@ struct Opt {
 
 // TODO: better to pass str or String?
 pub fn get_token(filepath: &str) -> String {
-    // TODO: why there is a newline?
     let mut contents = fs::read_to_string(filepath).expect("Something went wrong reading the file");
 
     contents
 }
+// TODO: use anyhow, or something for err handling
+// TODO: Add docs
+// TODO: tests
+// TODO: add a test for token
+// TODO: clippy
+// TODO: pretty formatting
+// TODO: use serde to serialize results to the struct, but only those fields we want
+// TODO: extract json keys to constants
+// TODO: don't use basic auth
 
 fn main() {
     let opt = Opt::from_args();
@@ -43,10 +51,8 @@ fn main() {
     let api = GithubApi::new(&opt.username, &token);
 
     // api.requires_token();
-    api.get_repos(&Query {
-        keyword: "tetris",
+    api.get_projects(&Query {
         language: &opt.language,
-        sort: "stars",
-        order: "desc",
+        count: opt.project_count
     }).unwrap();
 }
