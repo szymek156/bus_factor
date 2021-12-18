@@ -13,6 +13,7 @@ pub struct Query<'a> {
 pub struct GithubApi {
     username: String,
     token: String,
+    client: reqwest::blocking::Client,
 }
 
 struct BusFactor {
@@ -25,18 +26,17 @@ impl GithubApi {
         Self {
             username: username.to_string(),
             token: token.to_string(),
+            client: reqwest::blocking::Client::new(),
         }
     }
 
     // TODO: do a test
     /// Test token, this endpoint requires basic auth
     pub fn requires_token(&self) -> Result<(), reqwest::Error> {
-        let client = reqwest::blocking::Client::new();
-
         let endpoint = format!("https://api.github.com/users/{}/hovercard", self.username);
 
-        let mut res = client
-            // .get("https://api.github.com/search/repositories?q=tetris+language:assembly&sort=stars&order=desc&per_page=5")
+        let mut res = self
+            .client
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
             .basic_auth(&self.username, Some(&self.token))
@@ -70,15 +70,14 @@ impl GithubApi {
 
     /// Gets share of contribution for most active user among 25 others
     fn calculate_bus_factor(&self, contributors_url: &str) -> Result<BusFactor, Box<dyn Error>> {
-        let client = reqwest::blocking::Client::new();
-
         let endpoint = format!(
             "{contributors_url}?per_page={per_page}",
             contributors_url = contributors_url,
             per_page = 25
         );
 
-        let mut res = client
+        let mut res = self
+            .client
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
             .basic_auth(&self.username, Some(&self.token))
@@ -113,7 +112,7 @@ impl GithubApi {
             .as_str()
             .ok_or("Failed to retrieve login field")?;
 
-        let mut bus_factor = biggest_contribution as f64 / total_contributions as f64;
+        let bus_factor = biggest_contribution as f64 / total_contributions as f64;
 
         // println!("bus factor for {name} is {bus_factor}", name=user_name, bus_factor=bus_factor);
         Ok(BusFactor {
@@ -124,15 +123,14 @@ impl GithubApi {
 
     /// Returns most popular projects (by stars) for given language in ascending order
     pub fn get_projects(&self, query: &Query) -> Result<(), Box<dyn Error>> {
-        let client = reqwest::blocking::Client::new();
-
         let (_pages, count) = GithubApi::get_pages(query.count);
 
         let endpoint =
         format!("https://api.github.com/search/repositories?q=language:{language}&sort=stars&order=desc&per_page={per_page}",
           language=query.language, per_page=count);
 
-        let mut res = client
+        let mut res = self
+            .client
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
             .basic_auth(&self.username, Some(&self.token))
