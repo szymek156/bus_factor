@@ -38,11 +38,10 @@ pub fn get_token(filepath: &str) -> String {
 // TODO: tests
 // TODO: add a test for token
 // TODO: clippy
-// TODO: pretty formatting
-// TODO: use serde to serialize results to the struct, but only those fields we want
-// TODO: extract json keys to constants
+// TODO: pretty formatting of the result
 // TODO: read about bearer auth
 // TODO: get rid of username
+// TODO: test the cli
 
 fn main() {
     let opt = Opt::from_args();
