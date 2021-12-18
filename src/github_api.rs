@@ -1,7 +1,6 @@
 use reqwest;
 use reqwest::header::USER_AGENT;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use std::error::Error;
 use std::io::Read;
 
@@ -21,6 +20,60 @@ struct BusFactor {
     user_name: String,
 }
 
+#[derive(Serialize, Deserialize, Debug)]
+/// Using serde for extracting data in interest from the github API response.
+/// Response itself is enormous, this application uses only fraction of what
+/// is exposed. It's achieved by defining a struct that has fields named as
+/// in returned JSON. Awesomeness of serde library allows to pick up only
+/// those elements we want, and put them to the struct.
+/// It has many advantages.
+/// - Visible only that data we want
+/// - Open Close principle holds (wants something else? Simply add that field)
+/// - Whole parsing and validation is done in one place:
+/// ```
+/// // If succeeds, we know all items are valid, can reach elements without fear
+/// let contributions: Contributions = serde_json::from_str(&body)?;
+/// let leader = contributions[0];
+/// let biggest_contribution = leader.contributions;
+///
+/// ```
+/// Instead of:
+/// ```
+/// // Check every single field, every single time
+/// let biggest_contribution = leader["contributions"]
+///    .as_u64()
+///    .ok_or("Failed to retrieve contributions field")?;
+///
+/// let user_name = leader["login"]
+///    .as_str()
+///    .ok_or("Failed to retrieve login field")?;
+/// ```
+///
+/// RepoData holds information about repository from the query
+///
+struct RepoData {
+    contributors_url: String,
+    name: String,
+    stargazers_count: u64,
+}
+#[derive(Serialize, Deserialize, Debug)]
+/// Repos holds list of items that are result from
+/// https://api.github.com/search/repositories
+struct Repos {
+    items: Vec<RepoData>,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+/// Keeps data about contributor
+struct ContributorData {
+    contributions: u64,
+    login: String,
+}
+
+/// This is a list of items from
+/// https://api.github.com/repos/USER/REPO/contributors
+type Contributions = Vec<ContributorData>;
+
 impl GithubApi {
     pub fn new(username: &str, token: &str) -> Self {
         Self {
@@ -30,6 +83,7 @@ impl GithubApi {
         }
     }
 
+    // TODO: implement
     /// For given count elements returns number of pages, and residual
     fn get_pages(count: u32) -> (u32, u32) {
         const PAGE_LIMIT: u32 = 100;
@@ -65,35 +119,20 @@ impl GithubApi {
 
         res.read_to_string(&mut body)?;
 
-        // println!("Status: {}", res.status());
+        let contributions: Contributions = serde_json::from_str(&body)?;
 
-        let body: Value = serde_json::from_str(&body)?;
-
-        let total_contributions = body
-            .as_array()
-            .ok_or("Failed to get an array of contributors")?
+        let total_contributions = contributions
             .iter()
-            .try_fold(0, |acc, contributor| {
-                match contributor["contributions"].as_u64() {
-                    Some(c) => Ok(acc + c),
-                    None => Err("Failed to get contribution"),
-                }
-            })?;
+            .fold(0, |acc, contr| acc + contr.contributions);
 
-        let leader = &body[0];
-        let biggest_contribution = leader["contributions"]
-            .as_u64()
-            .ok_or("Failed to retrieve contributions field")?;
+        // Assuming there is always at least one contribution
+        // Contributions are sorted in descending order, so first element
+        // is contributor with highest activity.
+        let leader = &contributions[0];
+        let bus_factor = leader.contributions as f64 / total_contributions as f64;
 
-        let user_name = leader["login"]
-            .as_str()
-            .ok_or("Failed to retrieve login field")?;
-
-        let bus_factor = biggest_contribution as f64 / total_contributions as f64;
-
-        // println!("bus factor for {name} is {bus_factor}", name=user_name, bus_factor=bus_factor);
         Ok(BusFactor {
-            user_name: user_name.to_string(),
+            user_name: leader.login.to_string(),
             bus_factor,
         })
     }
@@ -117,25 +156,15 @@ impl GithubApi {
 
         res.read_to_string(&mut body)?;
 
-        let body: Value = serde_json::from_str(&body)?;
+        let repos: Repos = serde_json::from_str(&body)?;
 
-        for item in body["items"]
-            .as_array()
-            .ok_or("Failed to get an array of repos")?
-        {
-            let contributors_url = item["contributors_url"]
-                .as_str()
-                .ok_or("Failed to get contributors url")?;
-
-            let bus_factor = self.calculate_bus_factor(contributors_url)?;
+        for item in &repos.items {
+            let bus_factor = self.calculate_bus_factor(&item.contributors_url)?;
 
             if bus_factor.bus_factor >= 0.75 {
                 println!(
                     "Project {}, stars {} has bus factor {} for user {}",
-                    item["name"],
-                    item["stargazers_count"],
-                    bus_factor.bus_factor,
-                    bus_factor.user_name
+                    item.name, item.stargazers_count, bus_factor.bus_factor, bus_factor.user_name
                 );
             }
         }
@@ -146,7 +175,7 @@ impl GithubApi {
 
 #[cfg(test)]
 mod tests {
-    use std::{path::PathBuf, fs};
+    use std::{fs, path::PathBuf};
 
     use reqwest::StatusCode;
 
@@ -174,21 +203,5 @@ mod tests {
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::OK);
-    }
-
-    #[derive(Serialize, Deserialize, Debug)]
-    struct TestElement {
-        ent: String,
-        n : u32
-    }
-
-    #[test]
-    fn test_serde() {
-        let deserialized: TestElement = serde_json::from_str(
-        r#"{
-            "ent" : "BLA",
-            "n" : 123,
-            "unused" : "field"
-        }"#).unwrap();
     }
 }
