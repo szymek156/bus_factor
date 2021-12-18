@@ -1,8 +1,8 @@
 use reqwest;
 use reqwest::header::USER_AGENT;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::error::Error;
-use std::fs;
 use std::io::Read;
 
 //TODO: use enum where applicable
@@ -58,7 +58,6 @@ impl GithubApi {
             .client
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
-            // .basic_auth(&self.username, Some(&self.token))
             .bearer_auth(&self.token)
             .send()?;
 
@@ -68,7 +67,6 @@ impl GithubApi {
 
         // println!("Status: {}", res.status());
 
-        // TODO: reqwest error, and serde error, how to propagate both?
         let body: Value = serde_json::from_str(&body)?;
 
         let total_contributions = body
@@ -78,7 +76,7 @@ impl GithubApi {
             .try_fold(0, |acc, contributor| {
                 match contributor["contributions"].as_u64() {
                     Some(c) => Ok(acc + c),
-                    None => Err("failed to get contribution"),
+                    None => Err("Failed to get contribution"),
                 }
             })?;
 
@@ -112,7 +110,6 @@ impl GithubApi {
             .client
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
-            // .basic_auth(&self.username, Some(&self.token))
             .bearer_auth(&self.token)
             .send()?;
 
@@ -149,17 +146,19 @@ impl GithubApi {
 
 #[cfg(test)]
 mod tests {
-    use std::path::PathBuf;
+    use std::{path::PathBuf, fs};
 
     use reqwest::StatusCode;
 
     use super::*;
 
     #[test]
-    /// Checks if usage and value of the token is valid
-    fn token_is_valid() {
+    /// Checks if usage and value of the token are valid
+    /// Test requires token to be in root/.token
+    fn can_use_token() {
         let mut filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         filepath.push(".token");
+
         let token = fs::read_to_string(filepath).expect("Something went wrong reading the file");
 
         let api = GithubApi::new("szymek156", &token);
@@ -175,5 +174,21 @@ mod tests {
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    struct TestElement {
+        ent: String,
+        n : u32
+    }
+
+    #[test]
+    fn test_serde() {
+        let deserialized: TestElement = serde_json::from_str(
+        r#"{
+            "ent" : "BLA",
+            "n" : 123,
+            "unused" : "field"
+        }"#).unwrap();
     }
 }
