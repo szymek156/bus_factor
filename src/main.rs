@@ -29,7 +29,7 @@ struct Opt {
 
 // TODO: better to pass str or String?
 pub fn get_token(filepath: &str) -> String {
-    let mut contents = fs::read_to_string(filepath).expect("Something went wrong reading the file");
+    let contents = fs::read_to_string(filepath).expect("Something went wrong reading the file");
 
     contents
 }
@@ -41,7 +41,8 @@ pub fn get_token(filepath: &str) -> String {
 // TODO: pretty formatting
 // TODO: use serde to serialize results to the struct, but only those fields we want
 // TODO: extract json keys to constants
-// TODO: don't use basic auth
+// TODO: read about bearer auth
+// TODO: get rid of username
 
 fn main() {
     let opt = Opt::from_args();
@@ -53,6 +54,7 @@ fn main() {
     // api.requires_token();
     api.get_projects(&Query {
         language: &opt.language,
-        count: opt.project_count
-    }).unwrap();
+        count: opt.project_count,
+    })
+    .unwrap();
 }
