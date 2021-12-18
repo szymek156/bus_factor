@@ -30,28 +30,6 @@ impl GithubApi {
         }
     }
 
-    // TODO: do a test
-    /// Test token, this endpoint requires basic auth
-    pub fn requires_token(&self) -> Result<(), reqwest::Error> {
-        let endpoint = format!("https://api.github.com/users/{}/hovercard", self.username);
-
-        let mut res = self
-            .client
-            .get(endpoint)
-            .header(USER_AGENT, "bus_factor")
-            .basic_auth(&self.username, Some(&self.token))
-            .send()?;
-
-        let mut body = String::new();
-
-        res.read_to_string(&mut body);
-
-        println!("Status: {}", res.status());
-        println!("Body:\n{}", body);
-
-        Ok(())
-    }
-
     /// For given count elements returns number of pages, and residual
     fn get_pages(count: u32) -> (u32, u32) {
         const PAGE_LIMIT: u32 = 100;
@@ -80,7 +58,8 @@ impl GithubApi {
             .client
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
-            .basic_auth(&self.username, Some(&self.token))
+            // .basic_auth(&self.username, Some(&self.token))
+            .bearer_auth(&self.token)
             .send()?;
 
         let mut body = String::new();
@@ -133,7 +112,8 @@ impl GithubApi {
             .client
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
-            .basic_auth(&self.username, Some(&self.token))
+            // .basic_auth(&self.username, Some(&self.token))
+            .bearer_auth(&self.token)
             .send()?;
 
         let mut body = String::new();
@@ -164,5 +144,36 @@ impl GithubApi {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use reqwest::StatusCode;
+
+    use super::*;
+
+    #[test]
+    /// Checks if usage and value of the token is valid
+    fn token_is_valid() {
+        let mut filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        filepath.push(".token");
+        let token = fs::read_to_string(filepath).expect("Something went wrong reading the file");
+
+        let api = GithubApi::new("szymek156", &token);
+
+        let endpoint = format!("https://api.github.com/users/{}/hovercard", api.username);
+
+        let res = api
+            .client
+            .get(endpoint)
+            .header(USER_AGENT, "bus_factor")
+            .bearer_auth(&api.token)
+            .send()
+            .unwrap();
+
+        assert_eq!(res.status(), StatusCode::OK);
     }
 }
