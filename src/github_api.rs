@@ -1,107 +1,29 @@
 use reqwest::header::USER_AGENT;
 use reqwest::{self};
-use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io::Read;
 
 use crate::api_errors::ResponseError;
+use crate::github_data::{Contributions, Repos};
 
-//TODO: use enum where applicable
-pub struct Query<'a> {
-    pub language: &'a str,
-    pub count: u32,
-}
-pub struct GithubApi {
-    username: String,
-    token: String,
+struct GithubRequestor {
     client: reqwest::blocking::Client,
+    token: String,
 }
 
-struct BusFactor {
-    bus_factor: f64,
-    user_name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-/// Using serde for extracting data in interest from the github API response.
-/// Response itself is enormous, this application uses only fraction of what
-/// is exposed. It's achieved by defining a struct that has fields named as
-/// in returned JSON. Awesomeness of serde library allows to pick up only
-/// those elements we want, and put them to the struct.
-/// It has many advantages.
-/// - Visible only that data we want
-/// - Open Close principle holds (wants something else? Simply add that field)
-/// - Whole parsing and validation is done in one place:
-/// ```
-/// // If succeeds, we know all items are valid, can reach elements without fear
-/// let contributions: Contributions = serde_json::from_str(&body)?;
-/// let leader = contributions[0];
-/// let biggest_contribution = leader.contributions;
-///
-/// ```
-/// Instead of:
-/// ```
-/// // Check every single field, every single time
-/// let biggest_contribution = leader["contributions"]
-///    .as_u64()
-///    .ok_or("Failed to retrieve contributions field")?;
-///
-/// let user_name = leader["login"]
-///    .as_str()
-///    .ok_or("Failed to retrieve login field")?;
-/// ```
-///
-/// RepoData holds information about repository from the query
-///
-struct RepoData {
-    contributors_url: String,
-    name: String,
-    stargazers_count: u64,
-}
-#[derive(Serialize, Deserialize, Debug)]
-/// Repos holds list of items that are result from
-/// https://api.github.com/search/repositories
-struct Repos {
-    items: Vec<RepoData>,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-/// Keeps data about contributor
-struct ContributorData {
-    contributions: u64,
-    login: String,
-}
-
-/// This is a list of items from
-/// https://api.github.com/repos/USER/REPO/contributors
-type Contributions = Vec<ContributorData>;
-
-impl GithubApi {
-    pub fn new(username: &str, token: &str) -> Self {
+impl GithubRequestor {
+    fn new(token: &str) -> Self {
         Self {
-            username: username.to_string(),
-            token: token.to_string(),
             client: reqwest::blocking::Client::new(),
+            token: token.to_string(),
         }
     }
+}
+trait Requestor {
+    fn get_response_body(&self, endpoint: &str) -> Result<String, Box<dyn Error>>;
+}
 
-    // TODO: implement
-    /// For given count elements returns number of pages, and residual
-    fn get_pages(count: u32) -> (u32, u32) {
-        const PAGE_LIMIT: u32 = 100;
-        if count > PAGE_LIMIT {
-            // TODO: implement it
-            todo!();
-        }
-
-        (0, count)
-
-        // let pages = count / PAGE_LIMIT;
-        // let last_page = count % PAGE_LIMIT;
-
-        // (pages, last_page)
-    }
-
+impl Requestor for GithubRequestor {
     /// Sends a requests to given endpoint and returns a response body.
     /// Only when request was successful.
     fn get_response_body(&self, endpoint: &str) -> Result<String, Box<dyn Error>> {
@@ -126,6 +48,46 @@ impl GithubApi {
             Ok(body)
         }
     }
+}
+//TODO: use enum where applicable
+pub struct Query<'a> {
+    pub language: &'a str,
+    pub count: u32,
+}
+pub struct GithubApi {
+    username: String,
+    requestor: Box<dyn Requestor>,
+}
+
+struct BusFactor {
+    bus_factor: f64,
+    user_name: String,
+}
+
+impl GithubApi {
+    pub fn new(username: &str, token: &str) -> Self {
+        Self {
+            username: username.to_string(),
+            requestor: Box::new(GithubRequestor::new(token)),
+        }
+    }
+
+    // TODO: implement
+    /// For given count elements returns number of pages, and residual
+    fn get_pages(count: u32) -> (u32, u32) {
+        const PAGE_LIMIT: u32 = 100;
+        if count > PAGE_LIMIT {
+            // TODO: implement it
+            todo!();
+        }
+
+        (0, count)
+
+        // let pages = count / PAGE_LIMIT;
+        // let last_page = count % PAGE_LIMIT;
+
+        // (pages, last_page)
+    }
 
     /// Gets share of contribution for most active user among 25 others
     fn calculate_bus_factor(&self, contributors_url: &str) -> Result<BusFactor, Box<dyn Error>> {
@@ -137,7 +99,7 @@ impl GithubApi {
 
         debug!("Got endpoint {}", endpoint);
 
-        let body = self.get_response_body(&endpoint)?;
+        let body = self.requestor.get_response_body(&endpoint)?;
 
         let contributions: Contributions = serde_json::from_str(&body)?;
 
@@ -165,7 +127,7 @@ impl GithubApi {
         format!("https://api.github.com/search/repositories?q=language:{language}&sort=stars&order=desc&per_page={per_page}",
           language=query.language, per_page=count);
 
-        let body = self.get_response_body(&endpoint)?;
+        let body = self.requestor.get_response_body(&endpoint)?;
 
         let repos: Repos = serde_json::from_str(&body)?;
 
@@ -192,27 +154,67 @@ mod tests {
 
     use super::*;
 
-    #[test]
-    /// Checks if usage and value of the token are valid
-    /// Test requires token to be in root/.token
-    fn can_use_token() {
+    struct RequestorMock {
+        mock_response: Result<String, Box<dyn Error>>,
+    }
+
+    impl RequestorMock {
+        fn new() -> Self {
+            Self {
+                mock_response: Ok("{}".to_string()),
+            }
+        }
+
+        fn shall_return(&mut self, response: Result<String, Box<dyn Error>>) {
+            self.mock_response = response;
+        }
+    }
+
+    impl Requestor for RequestorMock {
+        fn get_response_body(&self, endpoint: &str) -> Result<String, Box<dyn Error>> {
+            Ok("{}".to_string())
+        }
+    }
+
+    fn load_token() -> String {
         let mut filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         filepath.push(".token");
 
         let token = fs::read_to_string(filepath).expect("Something went wrong reading the file");
 
-        let api = GithubApi::new("szymek156", &token);
+        token
+    }
 
-        let endpoint = format!("https://api.github.com/users/{}/hovercard", api.username);
+    #[test]
+    /// Checks if usage and value of the token are valid
+    /// Test requires token to be in root/.token
+    fn can_use_token() {
+        let token = load_token();
+        let client = reqwest::blocking::Client::new();
 
-        let res = api
-            .client
+        let endpoint = format!("https://api.github.com/users/{}/hovercard", "szymek156");
+
+        let res = client
             .get(endpoint)
             .header(USER_AGENT, "bus_factor")
-            .bearer_auth(&api.token)
+            .bearer_auth(&token)
             .send()
             .unwrap();
 
         assert_eq!(res.status(), StatusCode::OK);
+    }
+
+    #[test]
+    fn test_inject() {
+        let token = load_token();
+
+        let mut api = GithubApi::new("szymek156", &token);
+
+        let mut mock = RequestorMock::new();
+        mock.shall_return(Ok("{}".to_string()));
+        api.requestor = Box::new(mock);
+
+        let res = api.get_projects(&Query{ language: "rust", count: 10 });
+
     }
 }

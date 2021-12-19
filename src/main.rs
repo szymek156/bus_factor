@@ -3,7 +3,7 @@ extern crate log;
 
 mod api_errors;
 mod github_api;
-
+mod github_data;
 use std::fs;
 
 use github_api::{GithubApi, Query};
@@ -67,7 +67,7 @@ fn main() {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{error::Error, fs, path::PathBuf};
 
     use crate::api_errors::ResponseError;
 
@@ -101,14 +101,46 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new("szymek156", &token);
 
+        let e = format!(
+            "{:?}",
+            Box::new(ResponseError::new(
+                r#"{"message":"The history or contributor list is too large to list contributors for this repository via the API.","documentation_url":"https://docs.github.com/rest/reference/repos#list-repository-contributors"}"#
+            ))
+        );
+
+        let r = format!(
+            "{:?}",
+            api.get_projects(&Query {
+                language: "C",
+                count: 1,
+            })
+            .unwrap_err()
+        );
         // Linux is C project, with too many contributions to show, api will fail
-        // assert_eq!(
-        //     ResponseError,
-        //     *api.get_projects(&Query {
-        //         language: "C",
-        //         count: 1,
-        //     })
-        //     .unwrap_err()
-        // );
+        assert_eq!(e, r);
+    }
+
+    #[test]
+    fn invalid_language() {
+        let token = load_token();
+        let api = GithubApi::new("szymek156", &token);
+
+        let e = format!(
+            "{:?}",
+            Box::new(ResponseError::new(
+                r#"{"message":"Validation Failed","errors":[{"message":"None of the search qualifiers apply to this search type.","resource":"Search","field":"q","code":"invalid"}],"documentation_url":"https://docs.github.com/v3/search/"}"#
+            ))
+        );
+
+        let r = format!(
+            "{:?}",
+            api.get_projects(&Query {
+                language: "asdf",
+                count: 1,
+            })
+            .unwrap_err()
+        );
+        // Linux is C project, with too many contributions to show, api will fail
+        assert_eq!(e, r);
     }
 }
