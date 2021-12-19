@@ -1,8 +1,10 @@
-use reqwest;
 use reqwest::header::USER_AGENT;
+use reqwest::{self};
 use serde::{Deserialize, Serialize};
 use std::error::Error;
 use std::io::Read;
+
+use crate::api_errors::ResponseError;
 
 //TODO: use enum where applicable
 pub struct Query<'a> {
@@ -100,6 +102,31 @@ impl GithubApi {
         // (pages, last_page)
     }
 
+    /// Sends a requests to given endpoint and returns a response body.
+    /// Only when request was successful.
+    fn get_response_body(&self, endpoint: &str) -> Result<String, Box<dyn Error>> {
+        const USER_AGENT_NAME: &str = "bus_factor";
+
+        let mut res = self
+            .client
+            .get(endpoint)
+            .header(USER_AGENT, USER_AGENT_NAME)
+            .bearer_auth(&self.token)
+            .send()?;
+
+        let mut body = String::new();
+
+        res.read_to_string(&mut body)?;
+
+        // If status code is 4xx, 5xx
+        if res.error_for_status().is_err() {
+            // Api response contains useful information about the problem
+            Err(Box::new(ResponseError::new(&body)))
+        } else {
+            Ok(body)
+        }
+    }
+
     /// Gets share of contribution for most active user among 25 others
     fn calculate_bus_factor(&self, contributors_url: &str) -> Result<BusFactor, Box<dyn Error>> {
         let endpoint = format!(
@@ -108,16 +135,9 @@ impl GithubApi {
             per_page = 25
         );
 
-        let mut res = self
-            .client
-            .get(endpoint)
-            .header(USER_AGENT, "bus_factor")
-            .bearer_auth(&self.token)
-            .send()?;
+        debug!("Got endpoint {}", endpoint);
 
-        let mut body = String::new();
-
-        res.read_to_string(&mut body)?;
+        let body = self.get_response_body(&endpoint)?;
 
         let contributions: Contributions = serde_json::from_str(&body)?;
 
@@ -145,16 +165,7 @@ impl GithubApi {
         format!("https://api.github.com/search/repositories?q=language:{language}&sort=stars&order=desc&per_page={per_page}",
           language=query.language, per_page=count);
 
-        let mut res = self
-            .client
-            .get(endpoint)
-            .header(USER_AGENT, "bus_factor")
-            .bearer_auth(&self.token)
-            .send()?;
-
-        let mut body = String::new();
-
-        res.read_to_string(&mut body)?;
+        let body = self.get_response_body(&endpoint)?;
 
         let repos: Repos = serde_json::from_str(&body)?;
 
