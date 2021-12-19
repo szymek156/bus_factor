@@ -1,5 +1,5 @@
-
 use std::error::Error;
+use std::fmt::Debug;
 
 use crate::github_client::{Client, GithubClient};
 use crate::github_data::{Contributions, Repos};
@@ -12,9 +12,17 @@ pub struct GithubApi {
     client: Box<dyn Client>,
 }
 
-struct BusFactor {
-    bus_factor: f64,
-    user_name: String,
+#[derive(Debug)]
+pub struct BusFactor {
+    pub bus_factor: f64,
+    pub user_name: String,
+}
+
+#[derive(Debug)]
+pub struct ohgod {
+    pub leader: BusFactor,
+    pub repo_name: String,
+    pub stars: u64,
 }
 
 impl GithubApi {
@@ -72,7 +80,7 @@ impl GithubApi {
     }
 
     /// Returns most popular projects (by stars) for given language in ascending order
-    pub fn get_projects(&self, query: &Query) -> Result<(), Box<dyn Error>> {
+    pub fn get_projects(&self, query: &Query) -> Result<Vec<ohgod>, Box<dyn Error>> {
         let (_pages, count) = GithubApi::get_pages(query.count);
 
         let endpoint =
@@ -85,20 +93,25 @@ impl GithubApi {
 
         let repos: Repos = serde_json::from_str(&body)?;
 
+        let mut res = Vec::<ohgod>::new();
+
         for item in &repos.items {
             let bus_factor = self.calculate_bus_factor(&item.contributors_url)?;
+            debug!(
+                "Project {}, stars {} has bus factor {} for user {}",
+                item.name, item.stargazers_count, bus_factor.bus_factor, bus_factor.user_name
+            );
 
             if bus_factor.bus_factor >= 0.75 {
-                println!(
-                    "Project {}, stars {} has bus factor {} for user {}",
-                    item.name, item.stargazers_count, bus_factor.bus_factor, bus_factor.user_name
-                );
+                res.push(ohgod {
+                    repo_name: item.name.to_owned(),
+                    stars: item.stargazers_count,
+                    leader: bus_factor,
+                })
             }
         }
 
-        // TODO: return Vec of repos
-
-        Ok(())
+        Ok(res)
     }
 }
 
@@ -106,7 +119,7 @@ impl GithubApi {
 mod tests {
     use std::{fs, path::PathBuf};
 
-    use reqwest::{StatusCode, header::USER_AGENT};
+    use reqwest::{header::USER_AGENT, StatusCode};
 
     use super::*;
 

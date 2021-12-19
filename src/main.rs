@@ -3,11 +3,11 @@ extern crate log;
 
 mod api_errors;
 mod github_api;
-mod github_data;
 mod github_client;
+mod github_data;
 use std::fs;
 
-use github_api::{GithubApi, Query};
+use github_api::{ohgod, GithubApi, Query};
 use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -29,16 +29,27 @@ struct Opt {
 }
 
 // TODO: better to pass str or String?
-pub fn get_token(filepath: &str) -> String {
+fn get_token(filepath: &str) -> String {
     let contents = fs::read_to_string(filepath).expect("Something went wrong reading the file");
 
     contents
 }
+
+fn show_result(res: &[ohgod]) {
+    for repo in res {
+        println!(
+            "project: {project:20} user: {user:20} percentage: {bus_factor:.2}",
+            project = repo.repo_name,
+            user = repo.leader.user_name,
+            bus_factor = repo.leader.bus_factor
+        )
+    }
+}
+
 // TODO: use anyhow, or something for err handling
 // TODO: Add docs
 // TODO: tests
 // TODO: clippy
-// TODO: pretty formatting of the result
 // TODO: read about bearer auth
 // TODO: return errs with context
 // TODO: test the cli
@@ -53,14 +64,18 @@ fn main() {
 
     let api = GithubApi::new(&token);
 
-    api.get_projects(&Query {
-        language: &opt.language,
-        count: opt.project_count,
-    })
-    .unwrap();
+    let res = api
+        .get_projects(&Query {
+            language: &opt.language,
+            count: opt.project_count,
+        })
+        .unwrap();
+
+    show_result(&res);
 }
 
 #[cfg(test)]
+/// Integration tests, use actual Github API
 mod tests {
     use std::{error::Error, fs, path::PathBuf};
 
