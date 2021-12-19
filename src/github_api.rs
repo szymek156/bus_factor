@@ -49,7 +49,7 @@ impl GithubApi {
             per_page = 25
         );
 
-        debug!("Got endpoint {}", endpoint);
+        debug!("Contributors endpoint {}", endpoint);
 
         let body = self.client.get_response_body(&endpoint)?;
 
@@ -79,6 +79,8 @@ impl GithubApi {
         format!("https://api.github.com/search/repositories?q=language:{language}&sort=stars&order=desc&per_page={per_page}",
           language=query.language, per_page=count);
 
+        debug!("Repos endpoint {}", endpoint);
+
         let body = self.client.get_response_body(&endpoint)?;
 
         let repos: Repos = serde_json::from_str(&body)?;
@@ -93,6 +95,8 @@ impl GithubApi {
                 );
             }
         }
+
+        // TODO: return Vec of repos
 
         Ok(())
     }
