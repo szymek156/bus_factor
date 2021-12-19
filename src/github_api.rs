@@ -4,23 +4,26 @@ use std::fmt::Debug;
 use crate::github_client::{Client, GithubClient};
 use crate::github_data::{Contributions, Repos};
 
-pub struct Query<'a> {
+/// Contains parameters used for searching repositories
+pub struct RepoQuery<'a> {
     pub language: &'a str,
     pub count: u32,
 }
+/// Entity used to communicate with api.github.com
 pub struct GithubApi {
     client: Box<dyn Client>,
 }
 
 #[derive(Debug)]
-pub struct BusFactor {
+pub struct UserShare {
     pub bus_factor: f64,
     pub user_name: String,
 }
 
 #[derive(Debug)]
-pub struct ohgod {
-    pub leader: BusFactor,
+/// Contains repo information together with most active user
+pub struct BusFactor {
+    pub leader: UserShare,
     pub repo_name: String,
     pub stars: u64,
 }
@@ -50,7 +53,7 @@ impl GithubApi {
     }
 
     /// Gets share of contribution for most active user among 25 others
-    fn calculate_bus_factor(&self, contributors_url: &str) -> Result<BusFactor, Box<dyn Error>> {
+    fn calculate_repo_share(&self, contributors_url: &str) -> Result<UserShare, Box<dyn Error>> {
         let endpoint = format!(
             "{contributors_url}?per_page={per_page}",
             contributors_url = contributors_url,
@@ -73,14 +76,14 @@ impl GithubApi {
         let leader = &contributions[0];
         let bus_factor = leader.contributions as f64 / total_contributions as f64;
 
-        Ok(BusFactor {
+        Ok(UserShare {
             user_name: leader.login.to_string(),
             bus_factor,
         })
     }
 
     /// Returns most popular projects (by stars) for given language in ascending order
-    pub fn get_projects(&self, query: &Query) -> Result<Vec<ohgod>, Box<dyn Error>> {
+    pub fn get_repos(&self, query: &RepoQuery) -> Result<Repos, Box<dyn Error>> {
         let (_pages, count) = GithubApi::get_pages(query.count);
 
         let endpoint =
@@ -93,20 +96,27 @@ impl GithubApi {
 
         let repos: Repos = serde_json::from_str(&body)?;
 
-        let mut res = Vec::<ohgod>::new();
+        Ok(repos)
+    }
+
+    /// Calculates bus factor for each repo. Returns collection of repos that has
+    /// factor significant.
+    pub fn get_repo_bus_factor(&self, repos: &Repos) -> Result<Vec<BusFactor>, Box<dyn Error>> {
+        let mut res = Vec::<BusFactor>::new();
 
         for item in &repos.items {
-            let bus_factor = self.calculate_bus_factor(&item.contributors_url)?;
+            let share = self.calculate_repo_share(&item.contributors_url)?;
             debug!(
                 "Project {}, stars {} has bus factor {} for user {}",
-                item.name, item.stargazers_count, bus_factor.bus_factor, bus_factor.user_name
+                item.name, item.stargazers_count, share.bus_factor, share.user_name
             );
 
-            if bus_factor.bus_factor >= 0.75 {
-                res.push(ohgod {
+            // TODO: parametrize
+            if share.bus_factor >= 0.75 {
+                res.push(BusFactor {
                     repo_name: item.name.to_owned(),
                     stars: item.stargazers_count,
-                    leader: bus_factor,
+                    leader: share,
                 })
             }
         }
@@ -183,7 +193,7 @@ mod tests {
         mock.shall_return(Ok("{}".to_string()));
         api.client = Box::new(mock);
 
-        let res = api.get_projects(&Query {
+        let res = api.get_repos(&RepoQuery {
             language: "rust",
             count: 10,
         });
