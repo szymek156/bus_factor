@@ -49,13 +49,11 @@ impl Requestor for GithubRequestor {
         }
     }
 }
-//TODO: use enum where applicable
 pub struct Query<'a> {
     pub language: &'a str,
     pub count: u32,
 }
 pub struct GithubApi {
-    username: String,
     requestor: Box<dyn Requestor>,
 }
 
@@ -65,9 +63,8 @@ struct BusFactor {
 }
 
 impl GithubApi {
-    pub fn new(username: &str, token: &str) -> Self {
+    pub fn new(token: &str) -> Self {
         Self {
-            username: username.to_string(),
             requestor: Box::new(GithubRequestor::new(token)),
         }
     }
@@ -192,7 +189,7 @@ mod tests {
         let token = load_token();
         let client = reqwest::blocking::Client::new();
 
-        let endpoint = format!("https://api.github.com/users/{}/hovercard", "szymek156");
+        let endpoint = format!("https://api.github.com/user");
 
         let res = client
             .get(endpoint)
@@ -208,13 +205,17 @@ mod tests {
     fn test_inject() {
         let token = load_token();
 
-        let mut api = GithubApi::new("szymek156", &token);
+        let mut api = GithubApi::new(&token);
 
         let mut mock = RequestorMock::new();
         mock.shall_return(Ok("{}".to_string()));
         api.requestor = Box::new(mock);
 
-        let res = api.get_projects(&Query{ language: "rust", count: 10 });
+        let res = api.get_projects(&Query {
+            language: "rust",
+            count: 10,
+        });
 
+        assert!(res.is_ok());
     }
 }

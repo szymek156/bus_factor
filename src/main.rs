@@ -25,10 +25,6 @@ struct Opt {
     /// Filepath for token
     #[structopt(short, long, default_value = "./.token")]
     token_path: String,
-
-    // TODO: username is needed?
-    #[structopt(short, long, default_value = "szymek156")]
-    username: String,
 }
 
 // TODO: better to pass str or String?
@@ -40,11 +36,9 @@ pub fn get_token(filepath: &str) -> String {
 // TODO: use anyhow, or something for err handling
 // TODO: Add docs
 // TODO: tests
-// TODO: add a test for token
 // TODO: clippy
 // TODO: pretty formatting of the result
 // TODO: read about bearer auth
-// TODO: get rid of username
 // TODO: return errs with context
 // TODO: test the cli
 // TODO: 0 has a special meaning, returns all (30 - default per page)
@@ -56,7 +50,7 @@ fn main() {
 
     let token = get_token(&opt.token_path);
 
-    let api = GithubApi::new(&opt.username, &token);
+    let api = GithubApi::new(&token);
 
     api.get_projects(&Query {
         language: &opt.language,
@@ -87,7 +81,7 @@ mod tests {
     /// Test requires token to be in root/.token
     fn simple_call_works() {
         let token = load_token();
-        let api = GithubApi::new("szymek156", &token);
+        let api = GithubApi::new(&token);
 
         api.get_projects(&Query {
             language: "rust",
@@ -99,7 +93,7 @@ mod tests {
     #[test]
     fn api_fails_message_is_propagated() {
         let token = load_token();
-        let api = GithubApi::new("szymek156", &token);
+        let api = GithubApi::new(&token);
 
         let e = format!(
             "{:?}",
@@ -123,8 +117,9 @@ mod tests {
     #[test]
     fn invalid_language() {
         let token = load_token();
-        let api = GithubApi::new("szymek156", &token);
+        let api = GithubApi::new(&token);
 
+        // TODO: try to figure better way
         let e = format!(
             "{:?}",
             Box::new(ResponseError::new(
