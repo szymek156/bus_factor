@@ -1,60 +1,15 @@
-use reqwest::header::USER_AGENT;
-use reqwest::{self};
-use std::error::Error;
-use std::io::Read;
 
-use crate::api_errors::ResponseError;
+use std::error::Error;
+
+use crate::github_client::{Client, GithubClient};
 use crate::github_data::{Contributions, Repos};
 
-struct GithubRequestor {
-    client: reqwest::blocking::Client,
-    token: String,
-}
-
-impl GithubRequestor {
-    fn new(token: &str) -> Self {
-        Self {
-            client: reqwest::blocking::Client::new(),
-            token: token.to_string(),
-        }
-    }
-}
-trait Requestor {
-    fn get_response_body(&self, endpoint: &str) -> Result<String, Box<dyn Error>>;
-}
-
-impl Requestor for GithubRequestor {
-    /// Sends a requests to given endpoint and returns a response body.
-    /// Only when request was successful.
-    fn get_response_body(&self, endpoint: &str) -> Result<String, Box<dyn Error>> {
-        const USER_AGENT_NAME: &str = "bus_factor";
-
-        let mut res = self
-            .client
-            .get(endpoint)
-            .header(USER_AGENT, USER_AGENT_NAME)
-            .bearer_auth(&self.token)
-            .send()?;
-
-        let mut body = String::new();
-
-        res.read_to_string(&mut body)?;
-
-        // If status code is 4xx, 5xx
-        if res.error_for_status().is_err() {
-            // Api response contains useful information about the problem
-            Err(Box::new(ResponseError::new(&body)))
-        } else {
-            Ok(body)
-        }
-    }
-}
 pub struct Query<'a> {
     pub language: &'a str,
     pub count: u32,
 }
 pub struct GithubApi {
-    requestor: Box<dyn Requestor>,
+    client: Box<dyn Client>,
 }
 
 struct BusFactor {
@@ -65,7 +20,7 @@ struct BusFactor {
 impl GithubApi {
     pub fn new(token: &str) -> Self {
         Self {
-            requestor: Box::new(GithubRequestor::new(token)),
+            client: Box::new(GithubClient::new(token)),
         }
     }
 
@@ -96,7 +51,7 @@ impl GithubApi {
 
         debug!("Got endpoint {}", endpoint);
 
-        let body = self.requestor.get_response_body(&endpoint)?;
+        let body = self.client.get_response_body(&endpoint)?;
 
         let contributions: Contributions = serde_json::from_str(&body)?;
 
@@ -124,7 +79,7 @@ impl GithubApi {
         format!("https://api.github.com/search/repositories?q=language:{language}&sort=stars&order=desc&per_page={per_page}",
           language=query.language, per_page=count);
 
-        let body = self.requestor.get_response_body(&endpoint)?;
+        let body = self.client.get_response_body(&endpoint)?;
 
         let repos: Repos = serde_json::from_str(&body)?;
 
@@ -147,15 +102,15 @@ impl GithubApi {
 mod tests {
     use std::{fs, path::PathBuf};
 
-    use reqwest::StatusCode;
+    use reqwest::{StatusCode, header::USER_AGENT};
 
     use super::*;
 
-    struct RequestorMock {
+    struct ClientMock {
         mock_response: Result<String, Box<dyn Error>>,
     }
 
-    impl RequestorMock {
+    impl ClientMock {
         fn new() -> Self {
             Self {
                 mock_response: Ok("{}".to_string()),
@@ -167,7 +122,7 @@ mod tests {
         }
     }
 
-    impl Requestor for RequestorMock {
+    impl Client for ClientMock {
         fn get_response_body(&self, endpoint: &str) -> Result<String, Box<dyn Error>> {
             Ok("{}".to_string())
         }
@@ -207,9 +162,9 @@ mod tests {
 
         let mut api = GithubApi::new(&token);
 
-        let mut mock = RequestorMock::new();
+        let mut mock = ClientMock::new();
         mock.shall_return(Ok("{}".to_string()));
-        api.requestor = Box::new(mock);
+        api.client = Box::new(mock);
 
         let res = api.get_projects(&Query {
             language: "rust",

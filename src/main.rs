@@ -4,6 +4,7 @@ extern crate log;
 mod api_errors;
 mod github_api;
 mod github_data;
+mod github_client;
 use std::fs;
 
 use github_api::{GithubApi, Query};
