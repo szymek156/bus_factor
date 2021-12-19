@@ -7,7 +7,7 @@ mod github_client;
 mod github_data;
 use std::fs;
 
-use github_api::{ohgod, GithubApi, Query};
+use github_api::{BusFactor, GithubApi, RepoQuery};
 use structopt::StructOpt;
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -35,7 +35,7 @@ fn get_token(filepath: &str) -> String {
     contents
 }
 
-fn show_result(res: &[ohgod]) {
+fn show_result(res: &[BusFactor]) {
     for repo in res {
         println!(
             "project: {project:20} user: {user:20} percentage: {bus_factor:.2}",
@@ -64,12 +64,16 @@ fn main() {
 
     let api = GithubApi::new(&token);
 
-    let res = api
-        .get_projects(&Query {
+    println!("Querying for repos...");
+    let repos = api
+        .get_repos(&RepoQuery {
             language: &opt.language,
             count: opt.project_count,
         })
         .unwrap();
+
+    println!("Calculating bus factor for them...");
+    let res = api.get_repo_bus_factor(&repos).unwrap();
 
     show_result(&res);
 }
@@ -99,7 +103,7 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        api.get_projects(&Query {
+        api.get_repos(&RepoQuery {
             language: "rust",
             count: 1,
         })
@@ -111,6 +115,13 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new(&token);
 
+        let repo = api
+            .get_repos(&RepoQuery {
+                language: "C",
+                count: 1,
+            })
+            .unwrap();
+
         let e = format!(
             "{:?}",
             Box::new(ResponseError::new(
@@ -118,14 +129,7 @@ mod tests {
             ))
         );
 
-        let r = format!(
-            "{:?}",
-            api.get_projects(&Query {
-                language: "C",
-                count: 1,
-            })
-            .unwrap_err()
-        );
+        let r = format!("{:?}", api.get_repo_bus_factor(&repo).unwrap_err());
         // Linux is C project, with too many contributions to show, api will fail
         assert_eq!(e, r);
     }
@@ -145,7 +149,7 @@ mod tests {
 
         let r = format!(
             "{:?}",
-            api.get_projects(&Query {
+            api.get_repos(&RepoQuery {
                 language: "asdf",
                 count: 1,
             })
