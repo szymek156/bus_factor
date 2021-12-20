@@ -48,6 +48,7 @@ fn show_result(res: &[BusFactor]) {
     }
 }
 
+// TODO: async
 // TODO: use anyhow, or something for err handling
 // TODO: Add docs
 // TODO: tests
@@ -91,7 +92,7 @@ fn main() {
 #[cfg(test)]
 /// Integration tests, use actual Github API
 mod tests {
-    use std::{error::Error, fs, path::PathBuf};
+    use std::{fs, path::PathBuf};
 
     use crate::api_errors::ResponseError;
 
@@ -121,7 +122,7 @@ mod tests {
     }
 
     #[test]
-    fn api_fails_message_is_propagated() {
+    fn api_fails_response_error_is_propagated() {
         let token = load_token();
         let api = GithubApi::new(&token);
 
@@ -132,26 +133,19 @@ mod tests {
             })
             .unwrap();
 
-        let e = format!(
-            "{:?}",
-            Box::new(ResponseError::new(
-                r#"{"message":"The history or contributor list is too large to list contributors for this repository via the API.","documentation_url":"https://docs.github.com/rest/reference/repos#list-repository-contributors"}"#
-            ))
-        );
-
-        let r = format!(
-            "{:?}",
-            api.get_repo_bus_factor(
+        // Linux is C project, with too many contributions to show, api will fail
+        let err = api
+            .get_repo_bus_factor(
                 &repo,
                 &BusFactorQuery {
                     bus_threshold: 0.75,
                     users_to_consider: 25,
-                }
+                },
             )
-            .unwrap_err()
-        );
-        // Linux is C project, with too many contributions to show, api will fail
-        assert_eq!(e, r);
+            .unwrap_err();
+
+        assert!(err.is::<ResponseError>());
+        // TODO: might want check the message too
     }
 
     #[test]
@@ -159,23 +153,14 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        // TODO: try to figure better way
-        let e = format!(
-            "{:?}",
-            Box::new(ResponseError::new(
-                r#"{"message":"Validation Failed","errors":[{"message":"None of the search qualifiers apply to this search type.","resource":"Search","field":"q","code":"invalid"}],"documentation_url":"https://docs.github.com/v3/search/"}"#
-            ))
-        );
-
-        let r = format!(
-            "{:?}",
-            api.get_repos(&RepoQuery {
+        // Invalid language, api will fail
+        let err = api
+            .get_repos(&RepoQuery {
                 language: "asdf",
                 count: 1,
             })
-            .unwrap_err()
-        );
-        // Linux is C project, with too many contributions to show, api will fail
-        assert_eq!(e, r);
+            .unwrap_err();
+
+        assert!(err.is::<ResponseError>());
     }
 }
