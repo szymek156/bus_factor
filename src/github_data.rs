@@ -28,7 +28,9 @@
 //!
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug, Default)]
+// Clone, so it's possible to add RepoData from one container to another
+// Ord, used in test when transforming vec to set
+#[derive(Serialize, Deserialize, Debug, Default, Clone, PartialEq, Eq, PartialOrd, Ord)]
 
 /// RepoData holds information about repository from the query
 pub struct RepoData {
@@ -36,7 +38,7 @@ pub struct RepoData {
     pub name: String,
     pub stargazers_count: u64,
 }
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 /// Repos holds list of items that are result from
 /// https://api.github.com/search/repositories
 pub struct Repos {
