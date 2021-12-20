@@ -9,6 +9,8 @@ use std::fs;
 
 use github_api::{BusFactor, GithubApi, RepoQuery};
 use structopt::StructOpt;
+
+use crate::github_api::BusFactorQuery;
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "bus_factor",
@@ -73,7 +75,15 @@ fn main() {
         .unwrap();
 
     println!("Calculating bus factor for them...");
-    let res = api.get_repo_bus_factor(&repos).unwrap();
+    let res = api
+        .get_repo_bus_factor(
+            &repos,
+            &BusFactorQuery {
+                bus_threshold: 0.75,
+                users_to_consider: 25,
+            },
+        )
+        .unwrap();
 
     show_result(&res);
 }
@@ -129,7 +139,17 @@ mod tests {
             ))
         );
 
-        let r = format!("{:?}", api.get_repo_bus_factor(&repo).unwrap_err());
+        let r = format!(
+            "{:?}",
+            api.get_repo_bus_factor(
+                &repo,
+                &BusFactorQuery {
+                    bus_threshold: 0.75,
+                    users_to_consider: 25,
+                }
+            )
+            .unwrap_err()
+        );
         // Linux is C project, with too many contributions to show, api will fail
         assert_eq!(e, r);
     }

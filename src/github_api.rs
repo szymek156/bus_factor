@@ -9,18 +9,23 @@ pub struct RepoQuery<'a> {
     pub language: &'a str,
     pub count: u32,
 }
+
+pub struct BusFactorQuery {
+    pub bus_threshold: f64,
+    pub users_to_consider: u32,
+}
 /// Entity used to communicate with api.github.com
 pub struct GithubApi {
     client: Box<dyn Client>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct UserShare {
     pub bus_factor: f64,
     pub user_name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 /// Contains repo information together with most active user
 pub struct BusFactor {
     pub leader: UserShare,
@@ -53,18 +58,20 @@ impl GithubApi {
     }
 
     /// Gets share of contribution for most active user among 25 others
-    fn calculate_repo_share(&self, contributors_url: &str) -> Result<UserShare, Box<dyn Error>> {
+    fn calculate_repo_share(
+        &self,
+        contributors_url: &str,
+        users_to_consider: u32,
+    ) -> Result<UserShare, Box<dyn Error>> {
         let endpoint = format!(
             "{contributors_url}?per_page={per_page}",
             contributors_url = contributors_url,
-            per_page = 25
+            per_page = users_to_consider
         );
 
         debug!("Contributors endpoint {}", endpoint);
 
         let body = self.client.get_response_body(&endpoint)?;
-
-        info!("Contributors data \n {}", body);
 
         let contributions: Contributions = serde_json::from_str(&body)?;
 
@@ -103,18 +110,22 @@ impl GithubApi {
 
     /// Calculates bus factor for each repo. Returns collection of repos that has
     /// factor significant.
-    pub fn get_repo_bus_factor(&self, repos: &Repos) -> Result<Vec<BusFactor>, Box<dyn Error>> {
+    pub fn get_repo_bus_factor(
+        &self,
+        repos: &Repos,
+        query: &BusFactorQuery,
+    ) -> Result<Vec<BusFactor>, Box<dyn Error>> {
         let mut res = Vec::<BusFactor>::new();
 
         for item in &repos.items {
-            let share = self.calculate_repo_share(&item.contributors_url)?;
+            let share =
+                self.calculate_repo_share(&item.contributors_url, query.users_to_consider)?;
             debug!(
                 "Project {}, stars {} has bus factor {} for user {}",
                 item.name, item.stargazers_count, share.bus_factor, share.user_name
             );
 
-            // TODO: parametrize
-            if share.bus_factor >= 0.75 {
+            if share.bus_factor >= query.bus_threshold {
                 res.push(BusFactor {
                     repo_name: item.name.to_owned(),
                     stars: item.stargazers_count,
@@ -129,12 +140,7 @@ impl GithubApi {
 
 #[cfg(test)]
 mod tests {
-    use std::{
-        cell::RefCell,
-        collections::{vec_deque, VecDeque},
-        fs, mem,
-        path::PathBuf,
-    };
+    use std::{cell::RefCell, collections::VecDeque, fs, path::PathBuf};
 
     use assert_approx_eq::assert_approx_eq;
 
@@ -199,9 +205,9 @@ mod tests {
     }
 
     #[test]
+    /// Check that bus factor calculation is correct
     fn get_repo_bus_factor_works() {
-        let token = load_token();
-        let mut api = GithubApi::new(&token);
+        let mut api = GithubApi::new(&"token");
 
         // Prepare some fake data
         let data = vec![
@@ -229,10 +235,146 @@ mod tests {
             items: vec![RepoData::default()],
         };
 
-        let res = api.get_repo_bus_factor(&repos).unwrap();
+        let res = api
+            .get_repo_bus_factor(
+                &repos,
+                &BusFactorQuery {
+                    bus_threshold: 0.75,
+                    users_to_consider: 3,
+                },
+            )
+            .unwrap();
 
         assert_eq!(res.len(), 1);
 
         assert_approx_eq!(res[0].leader.bus_factor, 0.789, 0.001);
+    }
+
+    #[test]
+
+    /// Simulate full flow
+    fn can_get_bus_factor_from_repos() {
+        let mut api = GithubApi::new(&"token");
+        let mut mock = ClientMock::new();
+
+        // Prepare repos data
+        let repos = serde_json::to_string(&Repos {
+            items: vec![
+                RepoData {
+                    contributors_url: "https://api.github.com/repos/996icu/996.ICU/contributors"
+                        .to_string(),
+                    name: "996.ICU".to_string(),
+                    stargazers_count: 260209,
+                },
+                RepoData {
+                    contributors_url: "https://api.github.com/repos/denoland/deno/contributors"
+                        .to_string(),
+                    name: "deno".to_string(),
+                    stargazers_count: 79306,
+                },
+                RepoData {
+                    contributors_url: "https://api.github.com/repos/rust-lang/rust/contributors"
+                        .to_string(),
+                    name: "rust".to_string(),
+                    stargazers_count: 61545,
+                },
+            ],
+        })
+        .unwrap();
+
+        // Firstly return repos, when calling get_repos, some of
+        // them has high bus_factor, but not all.
+        mock.shall_return(Ok(repos));
+
+        // Prepare contributions data
+        // ... for repo 1
+        let repo_contributions = serde_json::to_string(&vec![
+            ContributorData {
+                contributions: 1354,
+                login: "996icu".to_string(),
+            },
+            ContributorData {
+                contributions: 49,
+                login: "ChangedenCZD".to_string(),
+            },
+            ContributorData {
+                contributions: 26,
+                login: "bofeiw".to_string(),
+            },
+        ])
+        .unwrap();
+
+        mock.shall_return(Ok(repo_contributions));
+
+        // ... for repo 2
+        let repo_contributions = serde_json::to_string(&vec![
+            ContributorData {
+                contributions: 1377,
+                login: "ry".to_string(),
+            },
+            ContributorData {
+                contributions: 838,
+                login: "bartlomieju".to_string(),
+            },
+            ContributorData {
+                contributions: 412,
+                login: "piscisaureus".to_string(),
+            },
+        ])
+        .unwrap();
+
+        mock.shall_return(Ok(repo_contributions));
+
+        // ... for repo 3
+        let repo_contributions = serde_json::to_string(&vec![
+            ContributorData {
+                contributions: 22552,
+                login: "bors".to_string(),
+            },
+            ContributorData {
+                contributions: 5507,
+                login: "brson".to_string(),
+            },
+            ContributorData {
+                contributions: 5072,
+                login: "alexcrichton".to_string(),
+            },
+        ])
+        .unwrap();
+
+        mock.shall_return(Ok(repo_contributions));
+
+        api.client = Box::new(mock);
+
+        // Simulate call to get_repos
+        let repos = api
+            .get_repos(&RepoQuery {
+                language: &"rust",
+                count: 3,
+            })
+            .unwrap();
+
+        // Simulate call to get_repop_bus_factor
+        let res = api
+            .get_repo_bus_factor(
+                &repos,
+                &BusFactorQuery {
+                    bus_threshold: 0.75,
+                    users_to_consider: 3,
+                },
+            )
+            .unwrap();
+
+        // With given parameters only one repo should be returned
+        let expected = vec![BusFactor {
+            leader: UserShare {
+                bus_factor: 0.947515745276417,
+                user_name: "996icu".to_string(),
+            },
+            repo_name: "996.ICU".to_string(),
+            stars: 260209,
+        }];
+
+        assert_eq!(expected, res);
     }
 }
