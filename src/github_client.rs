@@ -27,19 +27,28 @@ pub trait Client {
 pub async fn get_response_body(
     client: &GithubClient,
     endpoint: &str,
-) -> Result<String, reqwest::Error> {
+) -> Result<String, Box<dyn Error>> {
     const USER_AGENT_NAME: &str = "bus_factor";
 
-    let res = client.inner
+    let res = client
+        .inner
         .get(endpoint)
         .header(USER_AGENT, USER_AGENT_NAME)
         .bearer_auth(&client.token)
         .send()
-        .await?
-        .text()
-        .await;
+        .await?;
 
-    res
+    let is_error = res.error_for_status_ref().is_err();
+
+    let body = res.text().await?;
+
+    if is_error {
+        // Api response contains useful information about the problem
+
+        Err(Box::new(ResponseError::new(&body)))
+    } else {
+        Ok(body)
+    }
 }
 
 // impl Client for GithubClient {
