@@ -101,36 +101,15 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-// TODO: remove
-async fn async_testo(token: &str) {
-    let client = github_client::GithubClient::new(&token);
-    let endpoint = "https://api.github.com/search/repositories?q=language:rust&sort=stars&order=desc&per_page=100&page=1";
-
-    let now = Instant::now();
-    let f1 = github_client::get_response_body(&client, endpoint);
-    println!("await 1");
-
-    let f2 = github_client::get_response_body(&client, endpoint);
-    println!("await 2");
-
-    let f3 = github_client::get_response_body(&client, endpoint);
-    println!("await 3");
-
-    let f4 = github_client::get_response_body(&client, endpoint);
-    println!("await 4");
-
-    let (res1, res2, res3, res4) = join!(f1, f2, f3, f4);
-
-    println!("join took {}", now.elapsed().as_millis());
-
-    // println!("got result {:?}", res1);
-}
 #[cfg(test)]
 /// Integration tests, use actual Github API
 mod tests {
     use std::{collections::BTreeSet, fs, path::PathBuf};
 
-    use crate::api_errors::ResponseError;
+    use crate::{
+        api_errors::ResponseError,
+        github_api::{get_repos, get_repos_bus_factor},
+    };
 
     use super::*;
 
@@ -143,64 +122,74 @@ mod tests {
         token
     }
 
-    #[test]
+    #[tokio::test]
     /// Simple call to the API
-    fn simple_call_works() {
+    async fn simple_call_works() {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        let res = api
-            .get_repos(&RepoQuery {
+        let res = get_repos(
+            &api,
+            &RepoQuery {
                 language: "rust",
                 count: 1,
-            })
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
         assert_eq!(res.items.len(), 1);
     }
 
-    #[test]
+    #[tokio::test]
     /// Request 0 elements, expect 0
-    fn empty_call_does_not_blow_up() {
+    async fn empty_call_does_not_blow_up() {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        let repos = api
-            .get_repos(&RepoQuery {
+        let repos = get_repos(
+            &api,
+            &RepoQuery {
                 language: "rust",
                 count: 0,
-            })
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
         assert_eq!(repos.items.len(), 0);
 
-        let res = api
-            .get_repos_bus_factor(
-                &repos,
-                &BusFactorQuery {
-                    bus_threshold: 0.75,
-                    users_to_consider: 25,
-                },
-            )
-            .unwrap();
+        let res = get_repos_bus_factor(
+            &api,
+            &repos,
+            &BusFactorQuery {
+                bus_threshold: 0.75,
+                users_to_consider: 25,
+            },
+        )
+        .await
+        .unwrap();
 
         assert_eq!(res.len(), 0);
     }
 
-    #[test]
+    #[tokio::test]
     // Requests # of repos that does not fit on one page
-    fn pagination_works() {
+    async fn pagination_works() {
         let token = load_token();
         let api = GithubApi::new(&token);
 
         let repo_count = 150;
 
-        let repos = api
-            .get_repos(&RepoQuery {
+        let repos = get_repos(
+            &api,
+            &RepoQuery {
                 language: "rust",
                 count: repo_count,
-            })
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
         // Expect to get that many repos as requested
         assert_eq!(repos.items.len(), repo_count as usize);
@@ -210,48 +199,55 @@ mod tests {
         assert_eq!(set.len(), repo_count as usize);
     }
 
-    #[test]
+    #[tokio::test]
     /// Test failure on contributions endpoint
-    fn api_fails_response_error_is_propagated() {
+    async fn api_fails_response_error_is_propagated() {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        let repo = api
-            .get_repos(&RepoQuery {
+        let repo = get_repos(
+            &api,
+            &RepoQuery {
                 language: "C",
                 count: 1,
-            })
-            .unwrap();
+            },
+        )
+        .await
+        .unwrap();
 
         // Linux is C project, with too many contributions to show, api will fail
-        let err = api
-            .get_repos_bus_factor(
-                &repo,
-                &BusFactorQuery {
-                    bus_threshold: 0.75,
-                    users_to_consider: 25,
-                },
-            )
-            .unwrap_err();
+        let err = get_repos_bus_factor(
+            &api,
+            &repo,
+            &BusFactorQuery {
+                bus_threshold: 0.75,
+                users_to_consider: 25,
+            },
+        )
+        .await
+        .unwrap_err();
 
         assert!(err.is::<ResponseError>());
         // message, too many contributions to show via api
         // TODO: might want check the message too
     }
 
-    #[test]
+    #[tokio::test]
     /// Check failure on repos endpoint
-    fn invalid_language() {
+    async fn invalid_language() {
         let token = load_token();
         let api = GithubApi::new(&token);
 
         // Invalid language, api will fail
-        let err = api
-            .get_repos(&RepoQuery {
+        let err = get_repos(
+            &api,
+            &RepoQuery {
                 language: "asdf",
                 count: 1,
-            })
-            .unwrap_err();
+            },
+        )
+        .await
+        .unwrap_err();
 
         assert!(err.is::<ResponseError>());
         // message, invalid language
