@@ -176,20 +176,15 @@ mod tests {
         }
     }
 
-    fn load_token() -> String {
+    #[test]
+    /// Checks if usage and value of the token are valid
+    /// Test requires token to be in root/.token
+    fn can_use_token() {
         let mut filepath = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         filepath.push(".token");
 
         let token = fs::read_to_string(filepath).expect("Something went wrong reading the file");
 
-        token
-    }
-
-    #[test]
-    /// Checks if usage and value of the token are valid
-    /// Test requires token to be in root/.token
-    fn can_use_token() {
-        let token = load_token();
         let client = reqwest::blocking::Client::new();
 
         let endpoint = format!("https://api.github.com/user");
@@ -251,7 +246,6 @@ mod tests {
     }
 
     #[test]
-
     /// Simulate full flow
     fn can_get_bus_factor_from_repos() {
         let mut api = GithubApi::new(&"token");
