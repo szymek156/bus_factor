@@ -32,9 +32,7 @@ struct Opt {
 
 // TODO: better to pass str or String?
 fn get_token(filepath: &str) -> String {
-    let contents = fs::read_to_string(filepath).expect("Something went wrong reading the file");
-
-    contents
+    fs::read_to_string(filepath).expect("Something went wrong reading the file")
 }
 
 fn show_result(res: &[BusFactor]) {
@@ -139,13 +137,15 @@ mod tests {
 
         assert_eq!(repos.items.len(), 0);
 
-        let res = api.get_repos_bus_factor(
-            &repos,
-            &BusFactorQuery {
-                bus_threshold: 0.75,
-                users_to_consider: 25,
-            },
-        ).unwrap();
+        let res = api
+            .get_repos_bus_factor(
+                &repos,
+                &BusFactorQuery {
+                    bus_threshold: 0.75,
+                    users_to_consider: 25,
+                },
+            )
+            .unwrap();
 
         assert_eq!(res.len(), 0);
     }
