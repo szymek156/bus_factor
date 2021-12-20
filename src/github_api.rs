@@ -43,7 +43,6 @@ impl GithubApi {
         }
     }
 
-    // TODO: implement
     /// For given count elements returns number of full pages, and residual
     fn get_pages(count: u32) -> (u32, u32) {
         // Number of pages with PAGE_LIMIT elements
@@ -54,7 +53,7 @@ impl GithubApi {
         (full_pages, last_page)
     }
 
-    /// Gets share of contribution for most active user among 25 others
+    /// Gets share of contribution for most active user among users_to_consider
     fn calculate_repo_share(
         &self,
         contributors_url: &str,
@@ -107,7 +106,7 @@ impl GithubApi {
 
         // Get number of pages to request
         let last_page_elements = match full_pages {
-            // If there are no full pages, get exacly last_page elements
+            // If there are no full pages, get exactly last_page elements
             0 => last_page,
             // If there are full pages, get full page, to have pagination right
             _ => PAGE_LIMIT,
@@ -148,7 +147,7 @@ impl GithubApi {
 
     /// Calculates bus factor for each repo. Returns collection of repos that has
     /// factor significant.
-    pub fn get_repo_bus_factor(
+    pub fn get_repos_bus_factor(
         &self,
         repos: &Repos,
         query: &BusFactorQuery,
@@ -292,7 +291,7 @@ mod tests {
         };
 
         let res = api
-            .get_repo_bus_factor(
+            .get_repos_bus_factor(
                 &repos,
                 &BusFactorQuery {
                     bus_threshold: 0.75,
@@ -411,7 +410,7 @@ mod tests {
 
         // Simulate call to get_repo_bus_factor
         let res = api
-            .get_repo_bus_factor(
+            .get_repos_bus_factor(
                 &repos,
                 &BusFactorQuery {
                     bus_threshold: 0.75,

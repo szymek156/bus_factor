@@ -78,7 +78,7 @@ fn main() {
 
     println!("Calculating bus factor for them...");
     let res = api
-        .get_repo_bus_factor(
+        .get_repos_bus_factor(
             &repos,
             &BusFactorQuery {
                 bus_threshold: 0.75,
@@ -93,11 +93,7 @@ fn main() {
 #[cfg(test)]
 /// Integration tests, use actual Github API
 mod tests {
-    use std::{
-        collections::{BTreeSet, HashSet},
-        fs,
-        path::PathBuf,
-    };
+    use std::{collections::BTreeSet, fs, path::PathBuf};
 
     use crate::api_errors::ResponseError;
 
@@ -113,17 +109,45 @@ mod tests {
     }
 
     #[test]
-    /// Checks if usage and value of the token are valid
-    /// Test requires token to be in root/.token
+    /// Simple call to the API
     fn simple_call_works() {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        api.get_repos(&RepoQuery {
-            language: "rust",
-            count: 1,
-        })
-        .unwrap();
+        let res = api
+            .get_repos(&RepoQuery {
+                language: "rust",
+                count: 1,
+            })
+            .unwrap();
+
+        assert_eq!(res.items.len(), 1);
+    }
+
+    #[test]
+    /// Request 0 elements, expect 0
+    fn empty_call_does_not_blow_up() {
+        let token = load_token();
+        let api = GithubApi::new(&token);
+
+        let repos = api
+            .get_repos(&RepoQuery {
+                language: "rust",
+                count: 0,
+            })
+            .unwrap();
+
+        assert_eq!(repos.items.len(), 0);
+
+        let res = api.get_repos_bus_factor(
+            &repos,
+            &BusFactorQuery {
+                bus_threshold: 0.75,
+                users_to_consider: 25,
+            },
+        ).unwrap();
+
+        assert_eq!(res.len(), 0);
     }
 
     #[test]
@@ -150,6 +174,7 @@ mod tests {
     }
 
     #[test]
+    /// Test failure on contributions endpoint
     fn api_fails_response_error_is_propagated() {
         let token = load_token();
         let api = GithubApi::new(&token);
@@ -163,7 +188,7 @@ mod tests {
 
         // Linux is C project, with too many contributions to show, api will fail
         let err = api
-            .get_repo_bus_factor(
+            .get_repos_bus_factor(
                 &repo,
                 &BusFactorQuery {
                     bus_threshold: 0.75,
@@ -173,10 +198,12 @@ mod tests {
             .unwrap_err();
 
         assert!(err.is::<ResponseError>());
+        // message, too many contributions to show via api
         // TODO: might want check the message too
     }
 
     #[test]
+    /// Check failure on repos endpoint
     fn invalid_language() {
         let token = load_token();
         let api = GithubApi::new(&token);
@@ -190,5 +217,6 @@ mod tests {
             .unwrap_err();
 
         assert!(err.is::<ResponseError>());
+        // message, invalid language
     }
 }
