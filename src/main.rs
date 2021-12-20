@@ -5,8 +5,9 @@ mod api_errors;
 mod github_api;
 mod github_client;
 mod github_data;
-use std::fs;
+use std::{error::Error, fs, time::Instant};
 
+use futures::join;
 use github_api::{BusFactor, GithubApi, RepoQuery};
 use structopt::StructOpt;
 
@@ -49,15 +50,14 @@ fn show_result(res: &[BusFactor]) {
 
 // TODO: async
 // TODO: use anyhow, or something for err handling
-// TODO: Add docs
-// TODO: tests
 // TODO: clippy
 // TODO: read about bearer auth
 // TODO: return errs with context
-// TODO: test the cli
-// TODO: 0 has a special meaning, returns all (30 - default per page)
-// cargo run -- --language rust --project-count 0
-fn main() {
+// TODO: Update readme.md
+// TODO: do a benchmark with blocking
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let opt = Opt::from_args();
@@ -67,27 +67,55 @@ fn main() {
     let api = GithubApi::new(&token);
 
     println!("Querying for repos...");
-    let repos = api
-        .get_repos(&RepoQuery {
+    let repos = github_api::get_repos(
+        &api,
+        &RepoQuery {
             language: &opt.language,
             count: opt.project_count,
-        })
-        .unwrap();
+        },
+    )
+    .await?;
 
     println!("Calculating bus factor for them...");
-    let res = api
-        .get_repos_bus_factor(
-            &repos,
-            &BusFactorQuery {
-                bus_threshold: 0.75,
-                users_to_consider: 25,
-            },
-        )
-        .unwrap();
+    let res = github_api::get_repos_bus_factor(
+        &api,
+        &repos,
+        &BusFactorQuery {
+            bus_threshold: 0.75,
+            users_to_consider: 25,
+        },
+    )
+    .await?;
 
     show_result(&res);
+
+    Ok(())
 }
 
+// TODO: remove
+async fn async_testo(token: &str) {
+    let client = github_client::GithubClient::new(&token);
+    let endpoint = "https://api.github.com/search/repositories?q=language:rust&sort=stars&order=desc&per_page=100&page=1";
+
+    let now = Instant::now();
+    let f1 = github_client::get_response_body(&client, endpoint);
+    println!("await 1");
+
+    let f2 = github_client::get_response_body(&client, endpoint);
+    println!("await 2");
+
+    let f3 = github_client::get_response_body(&client, endpoint);
+    println!("await 3");
+
+    let f4 = github_client::get_response_body(&client, endpoint);
+    println!("await 4");
+
+    let (res1, res2, res3, res4) = join!(f1, f2, f3, f4);
+
+    println!("join took {}", now.elapsed().as_millis());
+
+    // println!("got result {:?}", res1);
+}
 #[cfg(test)]
 /// Integration tests, use actual Github API
 mod tests {
