@@ -28,7 +28,7 @@
 //!
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Default)]
 
 /// RepoData holds information about repository from the query
 pub struct RepoData {

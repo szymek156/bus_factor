@@ -64,6 +64,8 @@ impl GithubApi {
 
         let body = self.client.get_response_body(&endpoint)?;
 
+        info!("Contributors data \n {}", body);
+
         let contributions: Contributions = serde_json::from_str(&body)?;
 
         let total_contributions = contributions
@@ -127,31 +129,44 @@ impl GithubApi {
 
 #[cfg(test)]
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{
+        cell::RefCell,
+        collections::{vec_deque, VecDeque},
+        fs, mem,
+        path::PathBuf,
+    };
+
+    use assert_approx_eq::assert_approx_eq;
 
     use reqwest::{header::USER_AGENT, StatusCode};
 
+    use crate::github_data::{ContributorData, RepoData};
+
     use super::*;
 
+    /// Mock for the github client. Holds a collection of responses,
+    /// that are consumed in FIFO order upon each call to
+    /// get_response_body
     struct ClientMock {
-        mock_response: Result<String, Box<dyn Error>>,
+        mock_response: RefCell<VecDeque<Result<String, Box<dyn Error>>>>,
     }
 
     impl ClientMock {
         fn new() -> Self {
             Self {
-                mock_response: Ok("{}".to_string()),
+                mock_response: RefCell::new(VecDeque::new()),
             }
         }
 
         fn shall_return(&mut self, response: Result<String, Box<dyn Error>>) {
-            self.mock_response = response;
+            self.mock_response.borrow_mut().push_back(response);
         }
     }
 
     impl Client for ClientMock {
-        fn get_response_body(&self, endpoint: &str) -> Result<String, Box<dyn Error>> {
-            Ok("{}".to_string())
+        fn get_response_body(&self, _endpoint: &str) -> Result<String, Box<dyn Error>> {
+            let consumed = self.mock_response.borrow_mut().pop_front().unwrap();
+            consumed
         }
     }
 
@@ -184,20 +199,40 @@ mod tests {
     }
 
     #[test]
-    fn test_inject() {
+    fn get_repo_bus_factor_works() {
         let token = load_token();
-
         let mut api = GithubApi::new(&token);
 
+        // Prepare some fake data
+        let data = vec![
+            ContributorData {
+                contributions: 15,
+                login: "user1".to_string(),
+            },
+            ContributorData {
+                contributions: 3,
+                login: "user2".to_string(),
+            },
+            ContributorData {
+                contributions: 1,
+                login: "user3".to_string(),
+            },
+        ];
+
+        let data = serde_json::to_string(&data).unwrap();
+
         let mut mock = ClientMock::new();
-        mock.shall_return(Ok("{}".to_string()));
+        mock.shall_return(Ok(data));
         api.client = Box::new(mock);
 
-        let res = api.get_repos(&RepoQuery {
-            language: "rust",
-            count: 10,
-        });
+        let repos = Repos {
+            items: vec![RepoData::default()],
+        };
 
-        assert!(res.is_ok());
+        let res = api.get_repo_bus_factor(&repos).unwrap();
+
+        assert_eq!(res.len(), 1);
+
+        assert_approx_eq!(res[0].leader.bus_factor, 0.789, 0.001);
     }
 }
