@@ -1,7 +1,7 @@
 use std::error::Error;
 use std::fmt::Debug;
 
-use crate::github_client::{Client, GithubClient};
+use crate::github_client::{self, Client, GithubClient};
 use crate::github_data::{Contributions, Repos};
 
 // Max number of elements that fits on the page
@@ -19,7 +19,8 @@ pub struct BusFactorQuery {
 }
 /// Entity used to communicate with api.github.com
 pub struct GithubApi {
-    client: Box<dyn Client>,
+    // client: Box<dyn Client>,
+    token: String,
 }
 
 #[derive(Debug, PartialEq)]
@@ -36,10 +37,159 @@ pub struct BusFactor {
     pub stars: u64,
 }
 
+/// Returns most popular projects (by stars) for given language in ascending order
+pub async fn get_repos(
+    context: &GithubApi,
+    query: &RepoQuery<'_>,
+) -> Result<Repos, Box<dyn Error>> {
+    let (full_pages, last_page) = GithubApi::get_pages(query.count);
+
+    let query = format!(
+        "?q=language:{language}&sort=stars&order=desc",
+        language = query.language
+    );
+
+    let mut futures = vec![];
+    // Accumulate repos from all pages, page numbering starts from 1, not 0
+    for page in 1..=full_pages {
+        futures.push(get_repos_from_page(&context, &query, page, PAGE_LIMIT));
+    }
+
+    // Get number of pages to request
+    let last_page_elements = match full_pages {
+        // If there are no full pages, get exactly last_page elements
+        0 => last_page,
+        // If there are full pages, get full page, to have pagination right
+        _ => PAGE_LIMIT,
+    };
+
+    if last_page > 0 {
+        futures.push(get_repos_from_page(
+            &context,
+            &query,
+            full_pages + 1,
+            last_page_elements,
+        ));
+    }
+
+    // Execute all requests concurrently, responses are in the same order as futures
+    let responses = futures::future::join_all(futures).await;
+
+    let mut result = Repos::default();
+    for res in responses {
+        let repos = res?;
+        result.items.extend_from_slice(&repos.items);
+    }
+
+    Ok(result)
+}
+
+/// Helper function that returns repositories on given page
+async fn get_repos_from_page(
+    context: &GithubApi,
+    query: &str,
+    page: u32,
+    per_page: u32,
+) -> Result<Repos, Box<dyn Error>> {
+    let endpoint = format!(
+        "{endpoint}{query}&per_page={per_page}&page={page}",
+        endpoint = REPO_ENDPONT,
+        query = query,
+        per_page = per_page,
+        page = page
+    );
+
+    info!("Repos endpoint {}", endpoint);
+
+    // TODO: creating the client every time
+    let body =
+        github_client::get_response_body(&GithubClient::new(&context.token), &endpoint).await?;
+    let repos: Repos = serde_json::from_str(&body)?;
+
+    Ok(repos)
+}
+
+/// Calculates bus factor for each repo. Returns collection of repos that has
+/// factor significant.
+pub async fn get_repos_bus_factor(
+    context: &GithubApi,
+    repos: &Repos,
+    query: &BusFactorQuery,
+) -> Result<Vec<BusFactor>, Box<dyn Error>> {
+    let mut futures = vec![];
+
+    // Generate futures
+    for item in &repos.items {
+        futures.push(calculate_repo_share(&context, &item.contributors_url, query.users_to_consider));
+    }
+
+    // Execute all requests concurrently, responses are in the same order as futures
+    let responses = futures::future::join_all(futures).await;
+
+    let mut res = Vec::<BusFactor>::new();
+
+    // TODO: ZIP?
+    for (idx, item) in responses.into_iter().enumerate() {
+        // responses, and repo has the same amount of elements
+        let share = item?;
+        let repo = &repos.items[idx];
+
+        debug!(
+            "Project {}, stars {} has bus factor {} for user {}",
+            repo.name, repo.stargazers_count, share.bus_factor, share.user_name
+        );
+
+        if share.bus_factor >= query.bus_threshold {
+            res.push(BusFactor {
+                repo_name: repo.name.to_owned(),
+                stars: repo.stargazers_count,
+                leader: share,
+            })
+        }
+    }
+
+    Ok(res)
+}
+
+/// Gets share of contribution for most active user among users_to_consider
+async fn calculate_repo_share(
+    context: &GithubApi,
+    contributors_url: &str,
+    users_to_consider: u32,
+) -> Result<UserShare, Box<dyn Error>> {
+    let endpoint = format!(
+        "{contributors_url}?per_page={per_page}",
+        contributors_url = contributors_url,
+        per_page = users_to_consider
+    );
+
+    // info!("Contributors endpoint {}", endpoint);
+
+    let body =
+        github_client::get_response_body(&GithubClient::new(&context.token), &endpoint).await?;
+
+    let contributions: Contributions = serde_json::from_str(&body)?;
+
+    let total_contributions = contributions
+        .iter()
+        .fold(0, |acc, contr| acc + contr.contributions);
+
+    // Assuming there is always at least one contribution
+    // Contributions are sorted in descending order, so first element
+    // is contributor with highest activity.
+    let leader = &contributions[0];
+    let bus_factor = leader.contributions as f64 / total_contributions as f64;
+
+    Ok(UserShare {
+        user_name: leader.login.to_string(),
+        bus_factor,
+    })
+}
+
 impl GithubApi {
     pub fn new(token: &str) -> Self {
         Self {
-            client: Box::new(GithubClient::new(token)),
+            token: token.to_string(), // client: Box::new(GithubClient::new(token)),
         }
     }
 
@@ -51,127 +201,6 @@ impl GithubApi {
         let last_page = count % PAGE_LIMIT;
 
         (full_pages, last_page)
-    }
-
-    /// Gets share of contribution for most active user among users_to_consider
-    fn calculate_repo_share(
-        &self,
-        contributors_url: &str,
-        users_to_consider: u32,
-    ) -> Result<UserShare, Box<dyn Error>> {
-        let endpoint = format!(
-            "{contributors_url}?per_page={per_page}",
-            contributors_url = contributors_url,
-            per_page = users_to_consider
-        );
-
-        // info!("Contributors endpoint {}", endpoint);
-
-        let body = self.client.get_response_body(&endpoint)?;
-
-        let contributions: Contributions = serde_json::from_str(&body)?;
-
-        let total_contributions = contributions
-            .iter()
-            .fold(0, |acc, contr| acc + contr.contributions);
-
-        // Assuming there is always at least one contribution
-        // Contributions are sorted in descending order, so first element
-        // is contributor with highest activity.
-        let leader = &contributions[0];
-        let bus_factor = leader.contributions as f64 / total_contributions as f64;
-
-        Ok(UserShare {
-            user_name: leader.login.to_string(),
-            bus_factor,
-        })
-    }
-
-    /// Returns most popular projects (by stars) for given language in ascending order
-    pub fn get_repos(&self, query: &RepoQuery) -> Result<Repos, Box<dyn Error>> {
-        let (full_pages, last_page) = GithubApi::get_pages(query.count);
-
-        let mut result = Repos::default();
-
-        let query = format!(
-            "?q=language:{language}&sort=stars&order=desc",
-            language = query.language
-        );
-
-        // Accumulate repos from all pages, page numbering starts from 1, not 0
-        for page in 1..=full_pages {
-            let repos = self.get_repos_from_page(&query, page, PAGE_LIMIT)?;
-            result.items.extend_from_slice(&repos.items);
-        }
-
-        // Get number of pages to request
-        let last_page_elements = match full_pages {
-            // If there are no full pages, get exactly last_page elements
-            0 => last_page,
-            // If there are full pages, get full page, to have pagination right
-            _ => PAGE_LIMIT,
-        };
-
-        if last_page > 0 {
-            let repos = self.get_repos_from_page(&query, full_pages + 1, last_page_elements)?;
-            result
-                .items
-                .extend_from_slice(&repos.items[0..last_page as usize]);
-        }
-
-        Ok(result)
-    }
-
-    /// Helper function that returns repositories on given page
-    fn get_repos_from_page(
-        &self,
-        query: &str,
-        page: u32,
-        per_page: u32,
-    ) -> Result<Repos, Box<dyn Error>> {
-        let endpoint = format!(
-            "{endpoint}{query}&per_page={per_page}&page={page}",
-            endpoint = REPO_ENDPONT,
-            query = query,
-            per_page = per_page,
-            page = page
-        );
-
-        info!("Repos endpoint {}", endpoint);
-
-        let body = self.client.get_response_body(&endpoint)?;
-        let repos: Repos = serde_json::from_str(&body)?;
-
-        Ok(repos)
-    }
-
-    /// Calculates bus factor for each repo. Returns collection of repos that has
-    /// factor significant.
-    pub fn get_repos_bus_factor(
-        &self,
-        repos: &Repos,
-        query: &BusFactorQuery,
-    ) -> Result<Vec<BusFactor>, Box<dyn Error>> {
-        let mut res = Vec::<BusFactor>::new();
-
-        for item in &repos.items {
-            let share =
-                self.calculate_repo_share(&item.contributors_url, query.users_to_consider)?;
-            debug!(
-                "Project {}, stars {} has bus factor {} for user {}",
-                item.name, item.stargazers_count, share.bus_factor, share.user_name
-            );
-
-            if share.bus_factor >= query.bus_threshold {
-                res.push(BusFactor {
-                    repo_name: item.name.to_owned(),
-                    stars: item.stargazers_count,
-                    leader: share,
-                })
-            }
-        }
-
-        Ok(res)
     }
 }
 
