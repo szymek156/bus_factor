@@ -40,10 +40,11 @@ fn get_token(filepath: &str) -> String {
 fn show_result(res: &[BusFactor]) {
     for repo in res {
         println!(
-            "project: {project:20} user: {user:20} percentage: {bus_factor:.2}",
+            "project: {project:20} user: {user:20} percentage: {bus_factor:.2} stars: {stars}",
             project = repo.repo_name,
             user = repo.leader.user_name,
-            bus_factor = repo.leader.bus_factor
+            bus_factor = repo.leader.bus_factor,
+            stars = repo.stars
         )
     }
 }
@@ -92,7 +93,11 @@ fn main() {
 #[cfg(test)]
 /// Integration tests, use actual Github API
 mod tests {
-    use std::{fs, path::PathBuf};
+    use std::{
+        collections::{BTreeSet, HashSet},
+        fs,
+        path::PathBuf,
+    };
 
     use crate::api_errors::ResponseError;
 
@@ -119,6 +124,29 @@ mod tests {
             count: 1,
         })
         .unwrap();
+    }
+
+    #[test]
+    // Requests # of repos that does not fit on one page
+    fn pagination_works() {
+        let token = load_token();
+        let api = GithubApi::new(&token);
+
+        let repo_count = 150;
+
+        let repos = api
+            .get_repos(&RepoQuery {
+                language: "rust",
+                count: repo_count,
+            })
+            .unwrap();
+
+        // Expect to get that many repos as requested
+        assert_eq!(repos.items.len(), repo_count as usize);
+
+        // Expect no duplicates
+        let set: BTreeSet<_> = repos.items.into_iter().collect();
+        assert_eq!(set.len(), repo_count as usize);
     }
 
     #[test]

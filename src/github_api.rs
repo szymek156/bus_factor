@@ -4,6 +4,9 @@ use std::fmt::Debug;
 use crate::github_client::{Client, GithubClient};
 use crate::github_data::{Contributions, Repos};
 
+// Max number of elements that fits on the page
+const PAGE_LIMIT: u32 = 100;
+const REPO_ENDPONT: &str = "https://api.github.com/search/repositories";
 /// Contains parameters used for searching repositories
 pub struct RepoQuery<'a> {
     pub language: &'a str,
@@ -41,20 +44,14 @@ impl GithubApi {
     }
 
     // TODO: implement
-    /// For given count elements returns number of pages, and residual
+    /// For given count elements returns number of full pages, and residual
     fn get_pages(count: u32) -> (u32, u32) {
-        const PAGE_LIMIT: u32 = 100;
-        if count > PAGE_LIMIT {
-            // TODO: implement it
-            todo!();
-        }
+        // Number of pages with PAGE_LIMIT elements
+        let full_pages = count / PAGE_LIMIT;
+        // Last page that has the rest
+        let last_page = count % PAGE_LIMIT;
 
-        (0, count)
-
-        // let pages = count / PAGE_LIMIT;
-        // let last_page = count % PAGE_LIMIT;
-
-        // (pages, last_page)
+        (full_pages, last_page)
     }
 
     /// Gets share of contribution for most active user among 25 others
@@ -69,7 +66,7 @@ impl GithubApi {
             per_page = users_to_consider
         );
 
-        debug!("Contributors endpoint {}", endpoint);
+        // info!("Contributors endpoint {}", endpoint);
 
         let body = self.client.get_response_body(&endpoint)?;
 
@@ -93,16 +90,57 @@ impl GithubApi {
 
     /// Returns most popular projects (by stars) for given language in ascending order
     pub fn get_repos(&self, query: &RepoQuery) -> Result<Repos, Box<dyn Error>> {
-        let (_pages, count) = GithubApi::get_pages(query.count);
+        let (full_pages, last_page) = GithubApi::get_pages(query.count);
 
-        let endpoint =
-        format!("https://api.github.com/search/repositories?q=language:{language}&sort=stars&order=desc&per_page={per_page}",
-          language=query.language, per_page=count);
+        let mut result = Repos::default();
 
-        debug!("Repos endpoint {}", endpoint);
+        let query = format!(
+            "?q=language:{language}&sort=stars&order=desc",
+            language = query.language
+        );
+
+        // Accumulate repos from all pages, page numbering starts from 1, not 0
+        for page in 1..=full_pages {
+            let repos = self.get_repos_from_page(&query, page, PAGE_LIMIT)?;
+            result.items.extend_from_slice(&repos.items);
+        }
+
+        // Get number of pages to request
+        let last_page_elements = match full_pages {
+            // If there are no full pages, get exacly last_page elements
+            0 => last_page,
+            // If there are full pages, get full page, to have pagination right
+            _ => PAGE_LIMIT,
+        };
+
+        if last_page > 0 {
+            let repos = self.get_repos_from_page(&query, full_pages + 1, last_page_elements)?;
+            result
+                .items
+                .extend_from_slice(&repos.items[0..last_page as usize]);
+        }
+
+        Ok(result)
+    }
+
+    /// Helper function that returns repositories on given page
+    fn get_repos_from_page(
+        &self,
+        query: &str,
+        page: u32,
+        per_page: u32,
+    ) -> Result<Repos, Box<dyn Error>> {
+        let endpoint = format!(
+            "{endpoint}{query}&per_page={per_page}&page={page}",
+            endpoint = REPO_ENDPONT,
+            query = query,
+            per_page = per_page,
+            page = page
+        );
+
+        info!("Repos endpoint {}", endpoint);
 
         let body = self.client.get_response_body(&endpoint)?;
-
         let repos: Repos = serde_json::from_str(&body)?;
 
         Ok(repos)
@@ -174,6 +212,29 @@ mod tests {
             let consumed = self.mock_response.borrow_mut().pop_front().unwrap();
             consumed
         }
+    }
+
+    #[test]
+    fn test_get_pages() {
+        // Result that fits on one page
+        let (full_pages, last_page) = GithubApi::get_pages(50);
+        assert_eq!(full_pages, 0);
+        assert_eq!(last_page, 50);
+
+        // Result that comes to seconds page
+        let (full_pages, last_page) = GithubApi::get_pages(101);
+        assert_eq!(full_pages, 1);
+        assert_eq!(last_page, 1);
+
+        // Huuuge result
+        let (full_pages, last_page) = GithubApi::get_pages(2531);
+        assert_eq!(full_pages, 25);
+        assert_eq!(last_page, 31);
+
+        // Weird, but correct
+        let (full_pages, last_page) = GithubApi::get_pages(0);
+        assert_eq!(full_pages, 0);
+        assert_eq!(last_page, 0);
     }
 
     #[test]
@@ -348,7 +409,7 @@ mod tests {
             })
             .unwrap();
 
-        // Simulate call to get_repop_bus_factor
+        // Simulate call to get_repo_bus_factor
         let res = api
             .get_repo_bus_factor(
                 &repos,
