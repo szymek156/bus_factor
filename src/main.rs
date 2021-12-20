@@ -66,6 +66,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let api = GithubApi::new(&token);
 
+    let now = Instant::now();
+
     println!("Querying for repos...");
     let repos = github_api::get_repos(
         &api,
@@ -86,6 +88,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
         },
     )
     .await?;
+
+    println!(
+        "For lang {}, count {} it took {}ms",
+        opt.language,
+        opt.project_count,
+        now.elapsed().as_millis(),
+    );
 
     show_result(&res);
 
