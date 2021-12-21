@@ -105,7 +105,7 @@ mod tests {
     use std::{collections::BTreeSet, fs, path::PathBuf};
 
     use crate::{
-        api_errors::ResponseError,
+        api_errors::{ResponseError, InvalidQueryError},
         github_api::{get_repos, get_repos_bus_factor},
     };
 
@@ -228,6 +228,37 @@ mod tests {
         assert!(err.is::<ResponseError>());
         // message, too many contributions to show via api
         // TODO: might want check the message too
+    }
+
+    #[tokio::test]
+    /// Test failure on BusFactorQuery
+    async fn invalid_repo_query() {
+        let token = load_token();
+        let api = GithubApi::new(&token);
+
+        let repo = get_repos(
+            &api,
+            &RepoQuery {
+                language: "rust",
+                count: 1,
+            },
+        )
+        .await
+        .unwrap();
+
+        // 0 users_to_consider does not make any sense
+        let err = get_repos_bus_factor(
+            &api,
+            &repo,
+            &BusFactorQuery {
+                bus_threshold: 0.75,
+                users_to_consider: 0,
+            },
+        )
+        .await
+        .unwrap_err();
+
+        assert!(err.is::<InvalidQueryError>());
     }
 
     #[tokio::test]
