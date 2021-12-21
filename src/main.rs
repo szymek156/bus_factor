@@ -7,11 +7,16 @@ mod github_client;
 mod github_data;
 use std::{error::Error, fs, time::Instant};
 
-use futures::join;
 use github_api::{BusFactor, GithubApi, RepoQuery};
 use structopt::StructOpt;
 
 use crate::github_api::BusFactorQuery;
+
+// TODO: async in traits
+// TODO: use anyhow, or something for err handling
+// TODO: clippy
+// TODO: read about bearer auth
+
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "bus_factor",
@@ -31,10 +36,12 @@ struct Opt {
     token_path: String,
 }
 
+/// Reads token from the file
 fn get_token(filepath: &str) -> String {
     fs::read_to_string(filepath).expect("Something went wrong reading the file")
 }
 
+/// Pretty printing of the result
 fn show_result(res: &[BusFactor]) {
     for repo in res {
         println!(
@@ -46,11 +53,6 @@ fn show_result(res: &[BusFactor]) {
         )
     }
 }
-
-// TODO: async in traits
-// TODO: use anyhow, or something for err handling
-// TODO: clippy
-// TODO: read about bearer auth
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {

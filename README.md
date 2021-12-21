@@ -6,6 +6,11 @@ Used only stable features and libs, so sometimes implementation suffers because 
 
 ```--token-path``` expects a filepath that contains github token
 
+## With logging
+```RUST_LOG=bus_factor=LEVEL cargo run  --release -- --language rust --project-count 50 --token-path path```
+
+For ```LEVEL``` please refer to ```env_logger``` documentation.
+
 # Async and blocking
 There is blocking version available
 [Blocking 0.0.1](https://github.com/szymek156/bus_factor/tree/059066fc25850802b20b37c62eede7a633d874a4)
