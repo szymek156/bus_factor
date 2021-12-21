@@ -1,4 +1,4 @@
-use std::{error::Error, io::Read};
+use std::{error::Error};
 
 use reqwest::header::USER_AGENT;
 

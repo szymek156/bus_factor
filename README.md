@@ -1,36 +1,23 @@
 # bus_factor
+Application to calculate bus factor for github repositories.
+Used only stable features and libs, so sometimes implementation suffers because of that.
+# Usage
+```cargo run  --release -- --language rust --project-count 50 --token-path path```
 
-## Blocking
-cargo run  --release -- --language rust --project-count 50
-Querying for repos...
-Calculating bus factor for them...
-For lang rust, count 50 it took 14995ms
+```--token-path``` expects a filepath that contains github token
 
-cargo run  --release -- --language rust --project-count 150
-Querying for repos...
-Calculating bus factor for them...
-For lang rust, count 150 it took 43515ms
+# Async and blocking
+There is blocking version available
+[Blocking 0.0.1](https://github.com/szymek156/bus_factor/tree/059066fc25850802b20b37c62eede7a633d874a4)
 
-cargo run  --release -- --language rust --project-count 250
-Querying for repos...
-Calculating bus factor for them...
-For lang rust, count 250 it took 70164ms
+Async is on latest master.
 
+# Benchmark
+``` cargo run  --release -- --language rust --project-count COUNT ```
 
-## WIP async
-cargo run  --release -- --language rust --project-count 50
-Querying for repos...
-Calculating bus factor for them...
-For lang rust, count 50 it took 3217ms
-
-cargo run  --release -- --language rust --project-count 150
-Querying for repos...
-Calculating bus factor for them...
-For lang rust, count 150 it took 5484ms
-
-cargo run  --release -- --language rust --project-count 250
-Querying for repos...
-Calculating bus factor for them...
-For lang rust, count 250 it took 7152ms
-
+| count | blocking | async  |
+| ----- | -------- | ------ |
+| 50    | 14995ms  | 3217ms |
+| 150   | 43515ms  | 5484ms |
+| 250   | 70164ms  | 7152ms |
 
