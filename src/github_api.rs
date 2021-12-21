@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt::Debug;
 
+use crate::api_errors::InvalidQueryError;
 use crate::github_client::{self, GithubClient};
 use crate::github_data::{Contributions, Repos};
 
@@ -183,6 +184,14 @@ async fn calculate_repo_share(
     contributors_url: &str,
     users_to_consider: u32,
 ) -> Result<UserShare, Box<dyn Error>> {
+
+    if users_to_consider == 0 {
+        // Such request does not make any sense
+        return Err(Box::new(InvalidQueryError::new(
+            "Number of users to consider must be greater than 0.",
+        )));
+    }
+
     let endpoint = format!(
         "{contributors_url}?per_page={per_page}",
         contributors_url = contributors_url,
@@ -228,7 +237,7 @@ mod tests {
         assert_eq!(full_pages, 0);
         assert_eq!(last_page, 50);
 
-        // Result that comes to seconds page
+        // Result that comes to second page
         let (full_pages, last_page) = GithubApi::get_pages(101);
         assert_eq!(full_pages, 1);
         assert_eq!(last_page, 1);

@@ -7,8 +7,8 @@ pub struct ResponseError {
 }
 
 impl ResponseError {
-    pub fn new(msg: &str) -> ResponseError {
-        ResponseError {
+    pub fn new(msg: &str) -> Self {
+        Self {
             details: msg.to_string(),
         }
     }
@@ -21,6 +21,32 @@ impl fmt::Display for ResponseError {
 }
 
 impl Error for ResponseError {
+    fn description(&self) -> &str {
+        &self.details
+    }
+}
+
+#[derive(Debug)]
+pub struct InvalidQueryError {
+    details: String,
+
+}
+
+impl InvalidQueryError {
+    pub fn new(msg: &str) -> Self {
+        Self {
+            details: msg.to_string(),
+        }
+    }
+}
+
+impl fmt::Display for InvalidQueryError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.details)
+    }
+}
+
+impl Error for InvalidQueryError {
     fn description(&self) -> &str {
         &self.details
     }
