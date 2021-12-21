@@ -1,6 +1,7 @@
-use std::{error::Error};
+use std::error::Error;
 
 use reqwest::header::USER_AGENT;
+use serde::{de::DeserializeOwned};
 
 use crate::api_errors::ResponseError;
 
@@ -21,10 +22,14 @@ impl GithubClient {
 
 /// Sends a requests to given endpoint and returns a response body.
 /// Returns ResponseError if query was invalid
-pub async fn get_response_body(
+///
+pub async fn get_response_body<T>(
     client: &GithubClient,
     endpoint: &str,
-) -> Result<String, Box<dyn Error>> {
+) -> Result<T, Box<dyn Error>>
+where
+    T: DeserializeOwned,
+{
     const USER_AGENT_NAME: &str = "bus_factor";
 
     let res = client
@@ -37,12 +42,13 @@ pub async fn get_response_body(
 
     let is_error = res.error_for_status_ref().is_err();
 
-    let body = res.text().await?;
-
     if is_error {
         // Api response contains useful information about the problem
+        let body = res.text().await?;
+
         Err(Box::new(ResponseError::new(&body)))
     } else {
+        let body: T = res.json().await?;
         Ok(body)
     }
 }
