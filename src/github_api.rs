@@ -129,7 +129,8 @@ pub async fn get_repos_bus_factor(
 
     let mut res = Vec::<BusFactor>::new();
 
-    // TODO: ZIP?
+    // Well unstable
+    // for (response, repo) in zip(&responses, &repos.items)  {
     for (idx, item) in responses.into_iter().enumerate() {
         // responses, and repo has the same amount of elements
         let share = item?;

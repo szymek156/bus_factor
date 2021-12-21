@@ -31,7 +31,6 @@ struct Opt {
     token_path: String,
 }
 
-// TODO: better to pass str or String?
 fn get_token(filepath: &str) -> String {
     fs::read_to_string(filepath).expect("Something went wrong reading the file")
 }
@@ -48,13 +47,10 @@ fn show_result(res: &[BusFactor]) {
     }
 }
 
-// TODO: async
+// TODO: async in traits
 // TODO: use anyhow, or something for err handling
 // TODO: clippy
 // TODO: read about bearer auth
-// TODO: return errs with context
-// TODO: Update readme.md
-// TODO: do a benchmark with blocking
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
