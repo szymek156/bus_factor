@@ -120,9 +120,9 @@ async fn get_repos_from_page(
     debug!("Repos endpoint {}", endpoint);
 
     // Create separate client for each call
-    let body =
-        github_client::get_response_body(&GithubClient::new(&context.token), &endpoint).await?;
-    let repos: Repos = serde_json::from_str(&body)?;
+    let repos =
+        github_client::get_response_body::<Repos>(&GithubClient::new(&context.token), &endpoint)
+            .await?;
 
     Ok(repos)
 }
@@ -191,10 +191,11 @@ async fn calculate_repo_share(
 
     trace!("Contributors endpoint {}", endpoint);
 
-    let body =
-        github_client::get_response_body(&GithubClient::new(&context.token), &endpoint).await?;
-
-    let contributions: Contributions = serde_json::from_str(&body)?;
+    let contributions = github_client::get_response_body::<Contributions>(
+        &GithubClient::new(&context.token),
+        &endpoint,
+    )
+    .await?;
 
     let total_contributions = contributions
         .iter()
