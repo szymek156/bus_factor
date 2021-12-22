@@ -18,4 +18,3 @@ serde = { version="1.0.132", features=["derive"]}
 log = "0.4.14"
 env_logger = "0.9.0"
 assert_approx_eq = "1.1.0"
-async-trait = "0.1.52"

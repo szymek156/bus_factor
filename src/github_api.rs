@@ -1,8 +1,6 @@
 use std::error::Error;
 use std::fmt::Debug;
 
-use serde::{Deserialize, Serialize};
-
 use crate::api_errors::InvalidQueryError;
 use crate::github_client::GithubClient;
 use crate::github_data::{Contributions, Repos};
@@ -24,7 +22,6 @@ pub struct BusFactorQuery {
 /// Entity used to communicate with api.github.com
 pub struct GithubApi {
     token: String,
-    // client_factory: ClientFactory,
 }
 #[derive(Debug, PartialEq)]
 // Percentage user share in repository
@@ -57,6 +54,7 @@ impl GithubApi {
 
         (full_pages, last_page)
     }
+
     /// Returns most popular projects (by stars) for given language in ascending order
     pub async fn get_repos(&self, query: &RepoQuery<'_>) -> Result<Repos, Box<dyn Error>> {
         let (full_pages, last_page) = GithubApi::get_pages(query.count);
@@ -150,8 +148,8 @@ impl GithubApi {
         // Well, unstable
         // for (response, repo) in zip(&responses, &repos.items)  {
         for (idx, item) in responses.into_iter().enumerate() {
-            // responses, and repo has the same amount of elements
             let share = item?;
+            // responses, and repo has the same amount of elements
             let repo = &repos.items[idx];
 
             trace!(

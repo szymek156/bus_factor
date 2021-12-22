@@ -5,7 +5,7 @@
 //! those elements we want, and put them to the struct.
 //! It has many advantages.
 //! - Visible only that data we want
-//! - Open Close principle holds (wants something else? Simply add that field)
+//! - Open Close principle shines by it's brightest (Wants to extend? Simply add that field)
 //! - Whole parsing and validation is done in one place:
 //! ```
 //! // If succeeds, we know all items are valid, can reach elements without fear
