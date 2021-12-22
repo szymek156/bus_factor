@@ -12,15 +12,12 @@ use structopt::StructOpt;
 
 use crate::github_api::BusFactorQuery;
 
-// TODO: use anyhow, or something for err handling
-// TODO: clippy
-// TODO: read about bearer auth
-
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "bus_factor",
     about = "Command to gather bus factor statistics from gtihub repos."
 )]
+/// Command line arguments
 struct Opt {
     /// Programming language name
     #[structopt(short, long)]
@@ -222,25 +219,25 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        let repo = api.get_repos(
-            &RepoQuery {
+        let repo = api
+            .get_repos(&RepoQuery {
                 language: "rust",
                 count: 1,
-            },
-        )
-        .await
-        .unwrap();
+            })
+            .await
+            .unwrap();
 
         // 0 users_to_consider does not make any sense
-        let err = api.get_repos_bus_factor(
-            &repo,
-            &BusFactorQuery {
-                bus_threshold: 0.75,
-                users_to_consider: 0,
-            },
-        )
-        .await
-        .unwrap_err();
+        let err = api
+            .get_repos_bus_factor(
+                &repo,
+                &BusFactorQuery {
+                    bus_threshold: 0.75,
+                    users_to_consider: 0,
+                },
+            )
+            .await
+            .unwrap_err();
 
         assert!(err.is::<InvalidQueryError>());
     }
@@ -252,14 +249,13 @@ mod tests {
         let api = GithubApi::new(&token);
 
         // Invalid language, api will fail
-        let err = api.get_repos(
-            &RepoQuery {
+        let err = api
+            .get_repos(&RepoQuery {
                 language: "asdf",
                 count: 1,
-            },
-        )
-        .await
-        .unwrap_err();
+            })
+            .await
+            .unwrap_err();
 
         assert!(err.is::<ResponseError>());
         // message, invalid language
