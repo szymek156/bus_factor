@@ -11,9 +11,11 @@ Used only stable features and libs, so sometimes implementation suffers because 
 
 For ```LEVEL``` please refer to ```env_logger``` documentation.
 
+# Tests
+```cargo test -- --nocapture```
 # Async and blocking
 There is blocking version available
-[Blocking 0.0.1](https://github.com/szymek156/bus_factor/tree/059066fc25850802b20b37c62eede7a633d874a4)
+[Blocking 0.0.1](https://github.com/szymek156/bus_factor/tree/blocking)
 
 Async is on latest master.
 
