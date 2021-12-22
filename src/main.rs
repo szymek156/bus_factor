@@ -12,7 +12,6 @@ use structopt::StructOpt;
 
 use crate::github_api::BusFactorQuery;
 
-// TODO: async in traits
 // TODO: use anyhow, or something for err handling
 // TODO: clippy
 // TODO: read about bearer auth
@@ -67,25 +66,23 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let now = Instant::now();
 
     println!("Querying for repos...");
-    let repos = github_api::get_repos(
-        &api,
-        &RepoQuery {
+    let repos = api
+        .get_repos(&RepoQuery {
             language: &opt.language,
             count: opt.project_count,
-        },
-    )
-    .await?;
+        })
+        .await?;
 
     println!("Calculating bus factor for them...");
-    let res = github_api::get_repos_bus_factor(
-        &api,
-        &repos,
-        &BusFactorQuery {
-            bus_threshold: 0.75,
-            users_to_consider: 25,
-        },
-    )
-    .await?;
+    let res = api
+        .get_repos_bus_factor(
+            &repos,
+            &BusFactorQuery {
+                bus_threshold: 0.75,
+                users_to_consider: 25,
+            },
+        )
+        .await?;
 
     println!(
         "For lang {}, count {} it took {}ms",
@@ -104,10 +101,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 mod tests {
     use std::{collections::BTreeSet, fs, path::PathBuf};
 
-    use crate::{
-        api_errors::{ResponseError, InvalidQueryError},
-        github_api::{get_repos, get_repos_bus_factor},
-    };
+    use crate::api_errors::{InvalidQueryError, ResponseError};
 
     use super::*;
 
@@ -126,15 +120,13 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        let res = get_repos(
-            &api,
-            &RepoQuery {
+        let res = api
+            .get_repos(&RepoQuery {
                 language: "rust",
                 count: 1,
-            },
-        )
-        .await
-        .unwrap();
+            })
+            .await
+            .unwrap();
 
         assert_eq!(res.items.len(), 1);
     }
@@ -145,28 +137,26 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        let repos = get_repos(
-            &api,
-            &RepoQuery {
+        let repos = api
+            .get_repos(&RepoQuery {
                 language: "rust",
                 count: 0,
-            },
-        )
-        .await
-        .unwrap();
+            })
+            .await
+            .unwrap();
 
         assert_eq!(repos.items.len(), 0);
 
-        let res = get_repos_bus_factor(
-            &api,
-            &repos,
-            &BusFactorQuery {
-                bus_threshold: 0.75,
-                users_to_consider: 25,
-            },
-        )
-        .await
-        .unwrap();
+        let res = api
+            .get_repos_bus_factor(
+                &repos,
+                &BusFactorQuery {
+                    bus_threshold: 0.75,
+                    users_to_consider: 25,
+                },
+            )
+            .await
+            .unwrap();
 
         assert_eq!(res.len(), 0);
     }
@@ -179,15 +169,13 @@ mod tests {
 
         let repo_count = 150;
 
-        let repos = get_repos(
-            &api,
-            &RepoQuery {
+        let repos = api
+            .get_repos(&RepoQuery {
                 language: "rust",
                 count: repo_count,
-            },
-        )
-        .await
-        .unwrap();
+            })
+            .await
+            .unwrap();
 
         // Expect to get that many repos as requested
         assert_eq!(repos.items.len(), repo_count as usize);
@@ -203,27 +191,25 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        let repo = get_repos(
-            &api,
-            &RepoQuery {
+        let repo = api
+            .get_repos(&RepoQuery {
                 language: "C",
                 count: 1,
-            },
-        )
-        .await
-        .unwrap();
+            })
+            .await
+            .unwrap();
 
         // Linux is C project, with too many contributions to show, api will fail
-        let err = get_repos_bus_factor(
-            &api,
-            &repo,
-            &BusFactorQuery {
-                bus_threshold: 0.75,
-                users_to_consider: 25,
-            },
-        )
-        .await
-        .unwrap_err();
+        let err = api
+            .get_repos_bus_factor(
+                &repo,
+                &BusFactorQuery {
+                    bus_threshold: 0.75,
+                    users_to_consider: 25,
+                },
+            )
+            .await
+            .unwrap_err();
 
         assert!(err.is::<ResponseError>());
         // message, too many contributions to show via api
@@ -236,8 +222,7 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        let repo = get_repos(
-            &api,
+        let repo = api.get_repos(
             &RepoQuery {
                 language: "rust",
                 count: 1,
@@ -247,8 +232,7 @@ mod tests {
         .unwrap();
 
         // 0 users_to_consider does not make any sense
-        let err = get_repos_bus_factor(
-            &api,
+        let err = api.get_repos_bus_factor(
             &repo,
             &BusFactorQuery {
                 bus_threshold: 0.75,
@@ -268,8 +252,7 @@ mod tests {
         let api = GithubApi::new(&token);
 
         // Invalid language, api will fail
-        let err = get_repos(
-            &api,
+        let err = api.get_repos(
             &RepoQuery {
                 language: "asdf",
                 count: 1,
