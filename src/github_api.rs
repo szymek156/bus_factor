@@ -70,8 +70,25 @@ impl GithubApi {
             futures.push(self.get_repos_from_page(&query, page, PAGE_LIMIT));
         }
 
+        if last_page > 0 {
+            // Get number of pages for last request
+            let last_page_elements = match full_pages {
+                // If there are no full pages, get exactly last_page elements
+                0 => last_page,
+                // If there are full pages, get full page, to have pagination right
+                _ => PAGE_LIMIT,
+            };
+            futures.push(self.get_repos_from_page(&query, full_pages + 1, last_page_elements));
+        }
+
         // Execute all requests concurrently, responses are in the same order as futures
-        let responses = futures::future::join_all(futures).await;
+        let mut responses = futures::future::join_all(futures).await;
+
+        // Last element is treated differently, exclude it from following iteration
+        let mut last_response = None;
+        if last_page > 0 {
+            last_response = responses.pop();
+        }
 
         let mut result = Repos::default();
         for res in responses {
@@ -79,22 +96,12 @@ impl GithubApi {
             result.items.extend_from_slice(&repos.items);
         }
 
-        // Get number of pages for last request
-        let last_page_elements = match full_pages {
-            // If there are no full pages, get exactly last_page elements
-            0 => last_page,
-            // If there are full pages, get full page, to have pagination right
-            _ => PAGE_LIMIT,
-        };
-
-        if last_page > 0 {
-            let res = self
-                .get_repos_from_page(&query, full_pages + 1, last_page_elements)
-                .await?;
-            // Get only last_page elements
+        if let Some(last_result) = last_response {
+            let last_repos = last_result?;
+            // From last result get exactly last_page elements
             result
                 .items
-                .extend_from_slice(&res.items[0..last_page as usize]);
+                .extend_from_slice(&last_repos.items[0..last_page as usize])
         }
 
         Ok(result)
