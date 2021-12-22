@@ -164,22 +164,24 @@ mod tests {
         let token = load_token();
         let api = GithubApi::new(&token);
 
-        let repo_count = 150;
+        for repo_count in [0, 1, 50, 99, 100, 101, 150, 200] {
+            println!("pagination_works: testing repo_count {}...", repo_count);
 
-        let repos = api
-            .get_repos(&RepoQuery {
-                language: "rust",
-                count: repo_count,
-            })
-            .await
-            .unwrap();
+            let repos = api
+                .get_repos(&RepoQuery {
+                    language: "rust",
+                    count: repo_count,
+                })
+                .await
+                .unwrap();
 
-        // Expect to get that many repos as requested
-        assert_eq!(repos.items.len(), repo_count as usize);
+            // Expect to get that many repos as requested
+            assert_eq!(repos.items.len(), repo_count as usize);
 
-        // Expect no duplicates
-        let set: BTreeSet<_> = repos.items.into_iter().collect();
-        assert_eq!(set.len(), repo_count as usize);
+            // Expect no duplicates
+            let set: BTreeSet<_> = repos.items.into_iter().collect();
+            assert_eq!(set.len(), repo_count as usize);
+        }
     }
 
     #[tokio::test]
