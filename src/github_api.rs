@@ -55,7 +55,7 @@ impl GithubApi {
         (full_pages, last_page)
     }
 
-    /// Returns most popular projects (by stars) for given language in ascending order
+    /// Returns most popular projects (by stars) for given language in descending order
     pub async fn get_repos(&self, query: &RepoQuery<'_>) -> Result<Repos, Box<dyn Error>> {
         let (full_pages, last_page) = GithubApi::get_pages(query.count);
 
