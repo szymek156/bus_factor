@@ -1,23 +1,31 @@
+use std::collections::VecDeque;
 use std::error::Error;
 use std::fmt::Debug;
+use std::time::Duration;
+
+use futures::Future;
 
 use crate::api_errors::InvalidQueryError;
 use crate::github_client::GithubClient;
-use crate::github_data::{Contributions, Repos};
+use crate::github_data::{Contributions, Repos, RepoData};
 
 // Max number of elements that fits on the page
 const PAGE_LIMIT: u32 = 100;
 const REPO_ENDPONT: &str = "https://api.github.com/search/repositories";
 /// Contains parameters used for searching repositories
+#[derive(Debug)]
 pub struct RepoQuery<'a> {
     pub language: &'a str,
     pub count: u32,
+    pub delay_sec: f64,
 }
 
 /// Parameters to characterize bus_factor calculation
 pub struct BusFactorQuery {
     pub bus_threshold: f64,
     pub users_to_consider: u32,
+    pub delay_sec: f64,
+
 }
 /// Entity used to communicate with api.github.com
 pub struct GithubApi {
@@ -56,12 +64,12 @@ impl GithubApi {
     }
 
     /// Returns most popular projects (by stars) for given language in descending order
-    pub async fn get_repos(&self, query: &RepoQuery<'_>) -> Result<Repos, Box<dyn Error>> {
-        let (full_pages, last_page) = GithubApi::get_pages(query.count);
+    pub async fn get_repos(&self, repo_query: &RepoQuery<'_>) -> Result<Repos, Box<dyn Error>> {
+        let (full_pages, last_page) = GithubApi::get_pages(repo_query.count);
 
         let query = format!(
             "?q=language:{language}&sort=stars&order=desc",
-            language = query.language
+            language = repo_query.language
         );
 
         let mut futures = vec![];
@@ -81,8 +89,21 @@ impl GithubApi {
             futures.push(self.get_repos_from_page(&query, full_pages + 1, last_page_elements));
         }
 
-        // Execute all requests concurrently, responses are in the same order as futures
-        let mut responses = futures::future::join_all(futures).await;
+        let mut responses = Vec::new();
+        dbg!(repo_query);
+        if repo_query.delay_sec > 0.0 {
+            for element in futures {
+                responses.push(element.await);
+                println!("after push");
+                tokio::time::sleep(Duration::from_secs_f64(repo_query.delay_sec)).await;
+                println!("after sleep");
+
+            }
+
+        } else {
+            // Execute all requests concurrently, responses are in the same order as futures
+            responses = futures::future::join_all(futures).await;
+        }
 
         // Last element is treated differently, exclude it from following iteration
         let mut last_response = None;
@@ -132,6 +153,21 @@ impl GithubApi {
         Ok(repos)
     }
 
+    async fn worker(&self, jobs : &[RepoData], query: &BusFactorQuery) -> Vec<Result<UserShare, Box<dyn Error>>> {
+        let mut local_res = Vec::new();
+
+        for job in jobs {
+            info!("getting repo share...");
+            let res = self.calculate_repo_share(&job.contributors_url, query.users_to_consider).await;
+
+            local_res.push(res);
+
+            tokio::time::sleep(Duration::from_secs_f64(query.delay_sec)).await;
+        }
+
+        local_res
+    }
+
     /// Calculates bus factor for each repo. Returns collection of repos that has
     /// factor significant.
     pub async fn get_repos_bus_factor(
@@ -139,19 +175,59 @@ impl GithubApi {
         repos: &Repos,
         query: &BusFactorQuery,
     ) -> Result<Vec<BusFactor>, Box<dyn Error>> {
-        let mut futures = vec![];
+        let mut futures = Vec::new();
 
         // Generate futures
-        for item in &repos.items {
-            futures
-                .push(self.calculate_repo_share(&item.contributors_url, query.users_to_consider));
+        // for item in &repos.items {
+        //     futures
+        //         .push(self.calculate_repo_share(&item.contributors_url, query.users_to_consider));
+        // }
+
+        // Number of api calls that can be executed at once
+        let n_workers = 5;
+
+        let jobs_count = repos.items.len() / n_workers;
+
+        // Last chunk may contain less than jobs_count elements, the remainder
+        for chunk in repos.items.chunks(jobs_count) {
+            futures.push(self.worker(chunk, query));
         }
 
-        // Execute all requests concurrently, responses are in the same order as futures
+
         let responses = futures::future::join_all(futures).await;
 
-        let mut res = Vec::<BusFactor>::new();
+        // flatten partial results to vector of all results
+        let responses : Vec<Result<UserShare, Box<dyn Error>>> = responses.into_iter().flatten().collect();
+        // if query.delay_sec > 0.0 {
+        //     for (idx, element) in futures.into_iter().enumerate() {
+        //         let repo = &repos.items[idx];
 
+        //         let share = element.await;
+        //         tokio::time::sleep(Duration::from_secs_f64(query.delay_sec)).await;
+
+        //         if let Ok(s) = &share {
+
+        //             info!(
+        //                 "Project {}, stars {} has bus factor {} for user {}",
+        //                 repo.name,
+        //                 repo.stargazers_count,
+        //                 s.bus_factor,
+        //                 s.user_name
+        //             );
+        //         }
+
+        //         responses.push(share);
+        //     }
+        // } else {
+            // // Execute all requests concurrently, responses are in the same order as futures
+            // for chunk in futures.chunks(10) {
+
+            //     responses.append(futures::future::join_all(chunk).await);
+            // }
+        // }
+
+
+        let mut res = Vec::<BusFactor>::new();
         // Well, unstable
         // for (response, repo) in zip(&responses, &repos.items)  {
         for (idx, item) in responses.into_iter().enumerate() {

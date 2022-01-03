@@ -30,6 +30,9 @@ struct Opt {
     /// Filepath for token
     #[structopt(short, long, default_value = "./.token")]
     token_path: String,
+
+    #[structopt(short, long, default_value = "0")]
+    delay_sec: f64
 }
 
 /// Reads token from the file
@@ -67,6 +70,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .get_repos(&RepoQuery {
             language: &opt.language,
             count: opt.project_count,
+            delay_sec: opt.delay_sec
         })
         .await?;
 
@@ -77,6 +81,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
             &BusFactorQuery {
                 bus_threshold: 0.75,
                 users_to_consider: 25,
+                delay_sec: opt.delay_sec,
             },
         )
         .await?;
